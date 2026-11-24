@@ -1,0 +1,22 @@
+/* Global base styles. Module styles live in their own CSS files imported by each module. */
+:root {
+  --bg: #0f0d17;
+  --panel: #1a1726;
+  --panel-2: #241f35;
+  --text: #ece8f6;
+  --muted: #9a93b3;
+  --accent: #b18cff;
+  --danger: #ff5d6c;
+  --ok: #4ade80;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+#app { height: 100%; }
+button {
+  font: inherit; color: var(--text); background: var(--panel-2);
+  border: 1px solid #3a3352; border-radius: 6px; padding: 6px 12px; cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
