@@ -168,7 +168,7 @@ export function createSpellStrip(graph: SpellGraph, catalog: RuneCatalog, _plan:
     ctx.textAlign = 'right';
     if (s.hasShots) {
       ctx.fillStyle = ready ? '#ffe27a' : '#9fc4ff';
-      ctx.fillText(ready ? 'READY - click to cast' : `Charging ${Math.max(0, s.remaining).toFixed(1)}s`, panelW - 12, 11);
+      ctx.fillText(ready ? 'Casting…' : `Charging ${Math.max(0, s.remaining).toFixed(1)}s`, panelW - 12, 11);
     }
 
     const barX = leftEdge + (rightEdge - leftEdge) * (ready ? 1 : Math.max(0, Math.min(1, s.progress)));

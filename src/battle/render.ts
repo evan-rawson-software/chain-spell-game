@@ -16,6 +16,8 @@ export interface HudState {
   mouse: { x: number; y: number; inside: boolean };
   orbColor: string;
   time: number;
+  /** seconds since the spell last fired */
+  sinceCast: number;
   /** HUD text/bar scale compensation (>=1) */
   ui: number;
   /** 0..1 damage vignette strength */
@@ -60,37 +62,127 @@ function drawBackground(ctx: CanvasRenderingContext2D, t: number): void {
   ctx.fillRect(0, WIZ_Y - 140, 260, 340);
 }
 
+function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, ro: number, ri: number, fill: string): void {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? ri : ro;
+    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  ctx.closePath(); ctx.fill();
+}
+
 function drawWizard(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
-  const x = WIZ_X, y = WIZ_Y;
+  const t = h.time;
+  const flash = w.wizFlash > 0;
   const dead = w.wizHp <= 0;
+  const k = Math.max(0, 1 - h.sinceCast / 0.28); // recoil 1 -> 0 after a cast
+  const charge = h.hasShots ? Math.min(1, h.charge / h.castTime) : 0;
+  const bob = dead ? 0 : Math.sin(t * 2.2) * 1.6;
+  const sway = dead ? 0 : Math.sin(t * 1.3) * 0.025;
+  const x = WIZ_X - 4 * k, y = WIZ_Y + bob;
+  const outline = 'rgba(8,8,24,0.85)';
+
   ctx.save();
   if (dead) ctx.globalAlpha = 0.5;
+  // ground shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(WIZ_X, WIZ_Y + 40, 30, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+  // staff (behind body), anchored at the muzzle
+  const sx0 = x + 28, sy0 = WIZ_Y + 40;
+  ctx.strokeStyle = outline; ctx.lineWidth = 5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(MUZZLE_X - 4, MUZZLE_Y + 6); ctx.stroke();
+  ctx.strokeStyle = flash ? '#fff' : '#9a7648'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(MUZZLE_X - 4, MUZZLE_Y + 6); ctx.stroke();
+
+  // body sways around the feet
+  ctx.save();
+  ctx.translate(x, WIZ_Y + 38);
+  ctx.rotate(sway);
+  ctx.translate(-x, -(WIZ_Y + 38));
+
   // robe
-  ctx.fillStyle = w.wizFlash > 0 ? '#ffffff' : '#3b3f93';
+  const rg = ctx.createLinearGradient(0, y - 14, 0, y + 38);
+  rg.addColorStop(0, flash ? '#fff' : '#6a70d4');
+  rg.addColorStop(1, flash ? '#fff' : '#2a2e78');
+  const amp = 1 + 3.5 * k + 1.5 * charge;
+  ctx.fillStyle = rg; ctx.strokeStyle = outline; ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(x, y - 12); ctx.lineTo(x + 24, y + 36); ctx.lineTo(x - 24, y + 36); ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#5a60c4';
-  ctx.beginPath();
-  ctx.moveTo(x, y - 12); ctx.lineTo(x + 8, y + 36); ctx.lineTo(x - 8, y + 36); ctx.closePath();
-  ctx.fill();
+  ctx.moveTo(x - 9, y - 12);
+  ctx.quadraticCurveTo(x - 16, y + 12, x - 27, y + 36);
+  for (let i = 0; i <= 6; i++) {
+    const px = x - 27 + (54 * i) / 6;
+    ctx.lineTo(px, y + 36 + Math.sin(t * 9 + i * 1.7) * amp * (i % 2 ? 1 : 0.5));
+  }
+  ctx.quadraticCurveTo(x + 16, y + 12, x + 9, y - 12);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  if (k > 0 && !flash) { // cast flicker: tint with the spell color
+    ctx.save(); ctx.globalAlpha = 0.35 * k; ctx.fillStyle = h.orbColor; ctx.fill(); ctx.restore();
+  }
+  if (!flash) {
+    // sash + hem trim
+    ctx.fillStyle = '#4a50b0';
+    ctx.beginPath(); ctx.moveTo(x - 3, y - 10); ctx.lineTo(x + 3, y - 10); ctx.lineTo(x + 6, y + 34); ctx.lineTo(x - 6, y + 34); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#e0b84a'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(x - 26, y + 33); ctx.lineTo(x + 26, y + 33); ctx.stroke();
+    ctx.fillStyle = '#e0b84a';
+    ctx.fillRect(x - 10, y + 2, 20, 3);
+  }
+  // shoulders / arm to staff
+  ctx.strokeStyle = outline; ctx.lineWidth = 7; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x + 6, y - 8); ctx.lineTo(x + 24, y + 4); ctx.stroke();
+  ctx.strokeStyle = flash ? '#fff' : '#4f55bb'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(x + 6, y - 8); ctx.lineTo(x + 24, y + 4); ctx.stroke();
+  // hands
+  ctx.fillStyle = flash ? '#fff' : '#f0d2b0'; ctx.strokeStyle = outline; ctx.lineWidth = 1.5;
+  for (const hy of [y + 4, y + 20]) { ctx.beginPath(); ctx.arc(MUZZLE_X - 4 + 0.5, hy, 3.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+
   // head
-  ctx.fillStyle = '#f0d2b0';
-  ctx.beginPath(); ctx.arc(x, y - 20, 9, 0, Math.PI * 2); ctx.fill();
-  // hat
-  ctx.fillStyle = w.wizFlash > 0 ? '#ffffff' : '#2a2d6e';
+  ctx.fillStyle = flash ? '#fff' : '#f0d2b0';
+  ctx.beginPath(); ctx.arc(x, y - 19, 8.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#1a1a2a'; // eye (looking right, toward the enemies)
+  ctx.beginPath(); ctx.arc(x + 4, y - 20, 1.5, 0, Math.PI * 2); ctx.fill();
+  // beard
+  ctx.fillStyle = flash ? '#fff' : '#ececf4'; ctx.strokeStyle = outline; ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(x - 15, y - 25); ctx.lineTo(x + 15, y - 25); ctx.lineTo(x + 4, y - 58); ctx.closePath();
-  ctx.fill();
-  // staff
-  ctx.strokeStyle = '#8a6a44';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(x + 28, y + 38); ctx.lineTo(MUZZLE_X - 4, MUZZLE_Y + 6); ctx.stroke();
-  // orb
-  const pulse = 0.8 + 0.2 * Math.sin(h.time * 5) + (h.hasShots ? (h.charge / h.castTime) * 0.6 : 0);
-  glow(ctx, MUZZLE_X, MUZZLE_Y, 16 * pulse, h.orbColor, 0.7);
+  ctx.moveTo(x - 8, y - 18);
+  ctx.quadraticCurveTo(x - 7, y - 10, x + 1, y + 2 + Math.sin(t * 3) * 0.8);
+  ctx.quadraticCurveTo(x + 8, y - 10, x + 8, y - 17);
+  ctx.quadraticCurveTo(x, y - 14, x - 8, y - 18);
+  ctx.fill(); ctx.stroke();
+  // hat: brim, bent cone, band, star
+  const hatC = flash ? '#fff' : '#2a2d6e';
+  ctx.fillStyle = hatC; ctx.strokeStyle = outline; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - 12, y - 26);
+  ctx.quadraticCurveTo(x - 9, y - 46, x + 8, y - 58);
+  ctx.quadraticCurveTo(x + 20, y - 62, x + 21, y - 50);
+  ctx.quadraticCurveTo(x + 10, y - 48, x + 12, y - 26);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x, y - 26, 21, 5.5, -0.06, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  if (!flash) {
+    ctx.strokeStyle = '#e0b84a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x - 11.5, y - 29); ctx.quadraticCurveTo(x, y - 25, x + 11.5, y - 29); ctx.stroke();
+    drawStar(ctx, x - 1, y - 40, 4.2, 1.8, '#ffe27a');
+    ctx.fillStyle = '#ffe27a'; // little moon
+    ctx.beginPath(); ctx.arc(x + 11, y - 52, 2.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2a2d6e'; ctx.beginPath(); ctx.arc(x + 12.2, y - 52.8, 2.3, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  // staff head + orb
+  const ox = MUZZLE_X, oy = MUZZLE_Y;
+  ctx.strokeStyle = flash ? '#fff' : '#c9a35c'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.arc(ox, oy + 3, 8, Math.PI * 0.85, Math.PI * 2.15); ctx.stroke();
+  const pulse = 0.8 + 0.2 * Math.sin(t * 5) + charge * 0.6 + k * 0.9;
+  glow(ctx, ox, oy, 16 * pulse, h.orbColor, 0.7);
+  if (k > 0) glow(ctx, ox, oy, 30 * k + 10, h.orbColor, 0.6 * k);
+  ctx.fillStyle = h.orbColor;
+  ctx.beginPath(); ctx.arc(ox, oy, 5.5, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(MUZZLE_X, MUZZLE_Y, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(ox - 1, oy - 1, 2.8, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -106,65 +198,340 @@ function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, co
   ctx.restore();
 }
 
+interface Pose {
+  /** color mapper: applies hit-flash / frozen tint */
+  c: (col: string) => string;
+  /** walk phase (radians), 0 while frozen */
+  s: number;
+  /** 0..1 attack animation */
+  atk: number;
+  t: number;
+  id: number;
+}
+
+const OUT = 'rgba(10,8,18,0.85)';
+
+function mixBlue(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  if (hex[0] !== '#' || hex.length !== 7 || Number.isNaN(n)) return '#9fd9ee';
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return `rgb(${Math.round(r * 0.4 + 159 * 0.6)},${Math.round(g * 0.4 + 217 * 0.6)},${Math.round(b * 0.4 + 238 * 0.6)})`;
+}
+
+function ell(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, fill: string, stroke = true): void {
+  ctx.fillStyle = fill;
+  ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+function poly(ctx: CanvasRenderingContext2D, pts: number[], fill: string, stroke = true): void {
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  ctx.closePath(); ctx.fill();
+  if (stroke) ctx.stroke();
+}
+
+function feet(ctx: CanvasRenderingContext2D, r: number, spread: number, size: number, col: string, p: Pose): void {
+  const a = Math.sin(p.s) * r * 0.25;
+  ell(ctx, -spread * r + a, r * 0.85 - Math.max(0, Math.cos(p.s)) * 2, size * r, size * r * 0.55, col);
+  ell(ctx, spread * r - a, r * 0.85 - Math.max(0, -Math.cos(p.s)) * 2, size * r, size * r * 0.55, col);
+}
+
+function dots(ctx: CanvasRenderingContext2D, x: number, y: number, gap: number, rad: number, col: string): void {
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.arc(x + gap, y, rad, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawGrunt(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const skin = p.c(col), dark = p.c('#55702f');
+  feet(ctx, r, 0.4, 0.34, dark, p);
+  // club (front hand, swings on attack)
+  ctx.save();
+  ctx.translate(-r * 0.85, r * 0.2);
+  ctx.rotate(-0.6 - p.atk * 1.4 + Math.sin(p.s) * 0.1);
+  ctx.fillStyle = p.c('#8a6238');
+  ctx.fillRect(-r * 0.12, -r * 1.05, r * 0.24, r * 1.1); ctx.strokeRect(-r * 0.12, -r * 1.05, r * 0.24, r * 1.1);
+  ell(ctx, 0, -r * 1.05, r * 0.28, r * 0.34, p.c('#6b4a28'));
+  ctx.restore();
+  // ears
+  poly(ctx, [-r * 0.7, -r * 0.45, -r * 1.2, -r * 0.8, -r * 0.55, -r * 0.1], skin);
+  poly(ctx, [r * 0.7, -r * 0.45, r * 1.15, -r * 0.7, r * 0.55, -r * 0.1], skin);
+  // body
+  ell(ctx, 0, 0, r * 0.95, r * 0.88, skin);
+  ell(ctx, 0, r * 0.25, r * 0.5, r * 0.4, p.c('#8fae5a'), false);
+  dots(ctx, -r * 0.55, -r * 0.2, r * 0.38, Math.max(1.8, r * 0.14), '#ffe14a');
+  dots(ctx, -r * 0.58, -r * 0.2, r * 0.38, r * 0.06, '#1a1a1a');
+  // tusks
+  poly(ctx, [-r * 0.5, r * 0.2, -r * 0.4, r * 0.5, -r * 0.3, r * 0.2], '#f4ecd0', false);
+  poly(ctx, [-r * 0.05, r * 0.2, r * 0.05, r * 0.5, r * 0.15, r * 0.2], '#f4ecd0', false);
+}
+
+function drawRunner(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  // speed streaks behind (right side)
+  ctx.strokeStyle = 'rgba(255,230,160,0.45)'; ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const yy = (i - 1) * r * 0.6, len = r * (1.2 + 0.5 * ((i + Math.floor(p.t * 10)) % 2));
+    ctx.beginPath(); ctx.moveTo(r * 1.0, yy); ctx.lineTo(r * 1.0 + len, yy); ctx.stroke();
+  }
+  ctx.save();
+  ctx.rotate(-0.3); // lean into the run
+  const skin = p.c(col), dark = p.c('#9c7424');
+  const a = Math.sin(p.s * 1.6) * r * 0.55;
+  ctx.lineCap = 'round'; ctx.strokeStyle = OUT; ctx.lineWidth = r * 0.5;
+  ctx.beginPath(); ctx.moveTo(-r * 0.1, r * 0.5); ctx.lineTo(-r * 0.1 + a, r * 1.0); ctx.moveTo(r * 0.2, r * 0.5); ctx.lineTo(r * 0.2 - a, r * 1.0); ctx.stroke();
+  ctx.strokeStyle = dark; ctx.lineWidth = r * 0.34;
+  ctx.beginPath(); ctx.moveTo(-r * 0.1, r * 0.5); ctx.lineTo(-r * 0.1 + a, r * 1.0); ctx.moveTo(r * 0.2, r * 0.5); ctx.lineTo(r * 0.2 - a, r * 1.0); ctx.stroke();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
+  poly(ctx, [r * 0.3, -r * 0.55, r * 1.35, -r * 0.9, r * 0.5, -r * 0.1], skin); // ears sweep back
+  ell(ctx, 0, 0, r * 0.82, r * 0.7, skin);
+  ell(ctx, 0, r * 0.2, r * 0.45, r * 0.3, p.c('#efd27a'), false);
+  poly(ctx, [-r * 0.75, -r * 0.1, -r * 1.25, r * 0.12, -r * 0.7, r * 0.25], p.c('#e7b84a')); // snout
+  dots(ctx, -r * 0.45, -r * 0.3, r * 0.3, Math.max(1.6, r * 0.16), '#ffffff');
+  dots(ctx, -r * 0.5, -r * 0.3, r * 0.3, r * 0.07, '#1a1a1a');
+  ctx.restore();
+}
+
+function drawBrute(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const skin = p.c(col), dark = p.c('#5e3a25'), pad = p.c('#6c6f7a');
+  feet(ctx, r, 0.4, 0.3, dark, p);
+  const swing = Math.sin(p.s) * r * 0.12 - p.atk * r * 0.5;
+  ctx.lineCap = 'round';
+  for (const sd of [-1, 1]) {
+    const fx = sd * r * 0.95 + (sd < 0 ? swing : -swing * 0.5), fy = r * 0.5 + (sd < 0 ? -p.atk * r * 0.5 : 0);
+    ctx.strokeStyle = OUT; ctx.lineWidth = r * 0.5; ctx.beginPath(); ctx.moveTo(sd * r * 0.7, -r * 0.2); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.strokeStyle = skin; ctx.lineWidth = r * 0.36; ctx.beginPath(); ctx.moveTo(sd * r * 0.7, -r * 0.2); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = OUT;
+    ell(ctx, fx, fy, r * 0.26, r * 0.26, skin);
+  }
+  ell(ctx, 0, r * 0.1, r * 0.92, r * 0.85, skin);
+  ctx.fillStyle = dark; ctx.fillRect(-r * 0.8, r * 0.45, r * 1.6, r * 0.18);
+  ell(ctx, 0, r * 0.54, r * 0.14, r * 0.12, '#d8b24a', false);
+  for (const sd of [-1, 1]) {
+    ell(ctx, sd * r * 0.8, -r * 0.35, r * 0.4, r * 0.32, pad);
+    poly(ctx, [sd * r * 0.65, -r * 0.6, sd * r * 0.8, -r * 0.98, sd * r * 0.95, -r * 0.6], p.c('#aab0bd'));
+  }
+  poly(ctx, [-r * 0.35, -r * 0.62, -r * 0.7, -r * 1.15, -r * 0.1, -r * 0.8], p.c('#e8dfc4'));
+  poly(ctx, [r * 0.35, -r * 0.62, r * 0.7, -r * 1.15, r * 0.1, -r * 0.8], p.c('#e8dfc4'));
+  ell(ctx, -r * 0.05, -r * 0.5, r * 0.46, r * 0.4, skin);
+  dots(ctx, -r * 0.35, -r * 0.55, r * 0.3, Math.max(2, r * 0.07), '#ff5a3a');
+  ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 2; // brow
+  ctx.beginPath(); ctx.moveTo(-r * 0.5, -r * 0.7); ctx.lineTo(-r * 0.15, -r * 0.6); ctx.moveTo(r * 0.0, -r * 0.6); ctx.lineTo(r * 0.3, -r * 0.7); ctx.stroke();
+}
+
+function drawArcher(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const cloak = p.c(col), dark = p.c('#2f6a5a');
+  feet(ctx, r, 0.3, 0.28, p.c('#3a3a3a'), p);
+  // quiver on back
+  ctx.save(); ctx.translate(r * 0.55, -r * 0.1); ctx.rotate(0.35);
+  ctx.fillStyle = p.c('#7a5430'); ctx.fillRect(-r * 0.14, -r * 0.7, r * 0.28, r * 1.1); ctx.strokeRect(-r * 0.14, -r * 0.7, r * 0.28, r * 1.1);
+  ctx.strokeStyle = '#e8dca8'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-r * 0.05, -r * 0.7); ctx.lineTo(-r * 0.1, -r * 1.0); ctx.moveTo(r * 0.06, -r * 0.7); ctx.lineTo(r * 0.12, -r * 0.98); ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
+  poly(ctx, [-r * 0.5, -r * 0.5, r * 0.5, -r * 0.5, r * 0.85, r * 0.9, -r * 0.85, r * 0.9], cloak);
+  poly(ctx, [-r * 0.1, -r * 0.4, r * 0.1, -r * 0.4, r * 0.25, r * 0.9, -r * 0.25, r * 0.9], dark, false);
+  // hood
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.moveTo(-r * 0.7, -r * 0.1); ctx.quadraticCurveTo(-r * 0.85, -r * 1.15, 0, -r * 1.2); ctx.quadraticCurveTo(r * 0.8, -r * 1.1, r * 0.6, -r * 0.1); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ell(ctx, -r * 0.15, -r * 0.55, r * 0.38, r * 0.34, '#0e1a18', false);
+  dots(ctx, -r * 0.4, -r * 0.58, r * 0.24, Math.max(1.5, r * 0.09), '#e8f26a');
+  // bow with string (pulls back a little while idle, snaps on shot)
+  const pull = p.atk > 0 ? 0 : 0.5 + 0.5 * Math.sin(p.t * 2 + p.id);
+  const bx = -r * 0.65;
+  ctx.strokeStyle = OUT; ctx.lineWidth = 4.5;
+  ctx.beginPath(); ctx.arc(bx + r * 0.35, 0, r * 1.05, Math.PI * 0.72, Math.PI * 1.28); ctx.stroke();
+  ctx.strokeStyle = p.c('#a9743c'); ctx.lineWidth = 2.8;
+  ctx.beginPath(); ctx.arc(bx + r * 0.35, 0, r * 1.05, Math.PI * 0.72, Math.PI * 1.28); ctx.stroke();
+  const tipX = bx + r * 0.35 + Math.cos(Math.PI * 0.72) * r * 1.05, tipY = Math.sin(Math.PI * 0.72) * r * 1.05;
+  ctx.strokeStyle = 'rgba(240,240,240,0.8)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(tipX, tipY); ctx.lineTo(bx + r * (0.3 + pull * 0.25), 0); ctx.lineTo(tipX, -tipY); ctx.stroke();
+}
+
+function drawShaman(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const robe = p.c(col), dark = p.c('#4a3478');
+  ctx.save(); ctx.translate(0, Math.sin(p.t * 3 + p.id) * 1.5);
+  const gx = -r * 1.0;
+  ctx.strokeStyle = OUT; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(gx, r * 0.9); ctx.lineTo(gx, -r * 1.0); ctx.stroke();
+  ctx.strokeStyle = p.c('#8a6238'); ctx.lineWidth = 2.4;
+  ctx.beginPath(); ctx.moveTo(gx, r * 0.9); ctx.lineTo(gx, -r * 1.0); ctx.stroke();
+  glow(ctx, gx, -r * 1.1, r * (0.9 + 0.2 * Math.sin(p.t * 6 + p.id) + p.atk), '#c58bff', 0.8);
+  ctx.fillStyle = p.c('#e6c8ff'); ctx.beginPath(); ctx.arc(gx, -r * 1.1, r * 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
+  const sw = Math.sin(p.s) * r * 0.1;
+  ctx.fillStyle = robe;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.45, -r * 0.5);
+  ctx.lineTo(-r * 0.95 + sw, r * 0.95);
+  ctx.quadraticCurveTo(0, r * 0.75, r * 0.95 + sw, r * 0.95);
+  ctx.lineTo(r * 0.45, -r * 0.5);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = dark; ctx.fillRect(-r * 0.7 + sw, r * 0.7, r * 1.4, r * 0.15);
+  ell(ctx, gx, -r * 0.1, r * 0.17, r * 0.17, p.c('#cdb4e8'));
+  ctx.fillStyle = dark;
+  ctx.beginPath(); ctx.moveTo(-r * 0.6, -r * 0.35); ctx.quadraticCurveTo(-r * 0.7, -r * 1.15, 0, -r * 1.35); ctx.quadraticCurveTo(r * 0.7, -r * 1.1, r * 0.55, -r * 0.35); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ell(ctx, -r * 0.12, -r * 0.7, r * 0.34, r * 0.4, p.c('#efe6d8'));
+  dots(ctx, -r * 0.25, -r * 0.75, r * 0.27, r * 0.09, '#c58bff');
+  ctx.strokeStyle = '#7a3aaa'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-r * 0.22, -r * 0.5); ctx.lineTo(-r * 0.02, -r * 0.5); ctx.stroke();
+  ctx.restore();
+}
+
+function drawKnight(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const steel = p.c(col), dark = p.c('#5a6272'), gold = p.c('#d8b24a');
+  feet(ctx, r, 0.38, 0.3, dark, p);
+  // plume
+  ctx.fillStyle = p.c('#c23a3a');
+  ctx.beginPath(); ctx.moveTo(0, -r * 1.0); ctx.quadraticCurveTo(r * 0.6, -r * 1.3 + Math.sin(p.t * 5) * 2, r * 0.9, -r * 0.7); ctx.quadraticCurveTo(r * 0.4, -r * 0.9, r * 0.1, -r * 0.7); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ell(ctx, 0, r * 0.15, r * 0.85, r * 0.8, steel);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.45); ctx.lineTo(0, r * 0.8); ctx.stroke();
+  ctx.strokeStyle = OUT;
+  ctx.fillStyle = p.c('#3d4452'); ctx.fillRect(-r * 0.8, r * 0.38, r * 1.6, r * 0.2);
+  ell(ctx, r * 0.55, -r * 0.2, r * 0.32, r * 0.26, dark);
+  // helmet with visor slit
+  ell(ctx, -r * 0.05, -r * 0.55, r * 0.55, r * 0.5, steel);
+  ctx.fillStyle = '#10121a'; ctx.fillRect(-r * 0.55, -r * 0.62, r * 0.6, r * 0.14);
+  ctx.fillStyle = '#ff6a3a'; ctx.fillRect(-r * 0.45, -r * 0.6, r * 0.12, r * 0.1); ctx.fillRect(-r * 0.2, -r * 0.6, r * 0.12, r * 0.1);
+  poly(ctx, [-r * 0.05, -r * 1.02, r * 0.1, -r * 1.02, r * 0.1, -r * 0.6, -r * 0.05, -r * 0.6], gold, false);
+  // shield (front/left), raises on attack
+  ctx.save(); ctx.translate(-r * 0.95, r * 0.1 - p.atk * r * 0.2);
+  poly(ctx, [-r * 0.4, -r * 0.55, r * 0.4, -r * 0.55, r * 0.4, r * 0.15, 0, r * 0.8, -r * 0.4, r * 0.15], p.c('#3a56a0'));
+  ctx.strokeStyle = gold; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-r * 0.3, -r * 0.4); ctx.lineTo(r * 0.3, -r * 0.4); ctx.lineTo(r * 0.3, r * 0.12); ctx.lineTo(0, r * 0.6); ctx.lineTo(-r * 0.3, r * 0.12); ctx.closePath(); ctx.stroke();
+  ell(ctx, 0, -r * 0.05, r * 0.1, r * 0.1, gold, false);
+  ctx.restore();
+}
+
+function drawLich(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const robe = p.c(col), bone = p.c('#e6e2d0');
+  glow(ctx, 0, -r * 0.1, r * 1.9, '#7a3aff', 0.35 + 0.15 * Math.sin(p.t * 3));
+  ctx.save(); ctx.translate(0, Math.sin(p.t * 2) * 2);
+  // wispy tail
+  ctx.fillStyle = p.c('#3a2455');
+  ctx.beginPath(); ctx.moveTo(-r * 0.7, r * 0.5);
+  for (let i = 0; i <= 6; i++) ctx.lineTo(-r * 0.7 + (r * 1.4 * i) / 6, r * 0.95 + (i % 2 ? r * 0.12 : 0) + Math.sin(p.t * 4 + i) * 2);
+  ctx.lineTo(r * 0.7, r * 0.5); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2;
+  ctx.fillStyle = robe;
+  ctx.beginPath(); ctx.moveTo(-r * 0.45, -r * 0.45);
+  ctx.quadraticCurveTo(-r * 1.0, r * 0.2, -r * 0.8, r * 0.85);
+  ctx.lineTo(r * 0.8, r * 0.85); ctx.quadraticCurveTo(r * 1.0, r * 0.2, r * 0.45, -r * 0.45); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // ribcage
+  ctx.strokeStyle = 'rgba(230,226,208,0.75)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const yy = -r * 0.2 + i * r * 0.2;
+    ctx.beginPath(); ctx.moveTo(-r * 0.3 + i * 2, yy); ctx.quadraticCurveTo(0, yy + r * 0.12, r * 0.3 - i * 2, yy); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.3); ctx.lineTo(0, r * 0.55); ctx.stroke();
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2;
+  poly(ctx, [-r * 0.75, -r * 0.2, -r * 0.95, -r * 0.85, -r * 0.35, -r * 0.4], p.c('#3a2455'));
+  poly(ctx, [r * 0.75, -r * 0.2, r * 0.95, -r * 0.85, r * 0.35, -r * 0.4], p.c('#3a2455'));
+  // floating hands
+  const hy = Math.sin(p.t * 3) * 3 - p.atk * r * 0.2;
+  for (const sd of [-1, 1]) {
+    glow(ctx, sd * r * 1.05, r * 0.15 + hy * sd, r * 0.4, '#8cffb0', 0.5);
+    ell(ctx, sd * r * 1.05, r * 0.15 + hy * sd, r * 0.16, r * 0.2, bone);
+  }
+  // skull
+  ell(ctx, -r * 0.05, -r * 0.7, r * 0.42, r * 0.42, bone);
+  ell(ctx, -r * 0.05, -r * 0.38, r * 0.26, r * 0.14, bone);
+  ctx.fillStyle = '#0a0a14';
+  ctx.beginPath(); ctx.ellipse(-r * 0.25, -r * 0.72, r * 0.1, r * 0.13, 0, 0, Math.PI * 2); ctx.ellipse(r * 0.15, -r * 0.72, r * 0.1, r * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+  glow(ctx, -r * 0.25, -r * 0.72, r * 0.25, '#8cffb0', 0.8); glow(ctx, r * 0.15, -r * 0.72, r * 0.25, '#8cffb0', 0.8);
+  dots(ctx, -r * 0.25, -r * 0.72, r * 0.4, r * 0.04, '#8cffb0');
+  ctx.strokeStyle = '#0a0a14'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); for (let i = -2; i <= 2; i++) { ctx.moveTo(-r * 0.05 + i * r * 0.07, -r * 0.4); ctx.lineTo(-r * 0.05 + i * r * 0.07, -r * 0.3); } ctx.stroke();
+  // crown
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
+  const cx0 = -r * 0.05, cy0 = -r * 1.0;
+  poly(ctx, [cx0 - r * 0.42, cy0 + r * 0.08, cx0 - r * 0.42, cy0 - r * 0.2, cx0 - r * 0.22, cy0 - r * 0.02, cx0, cy0 - r * 0.26, cx0 + r * 0.22, cy0 - r * 0.02, cx0 + r * 0.42, cy0 - r * 0.2, cx0 + r * 0.42, cy0 + r * 0.08], p.c('#d8b24a'));
+  ctx.fillStyle = '#8cffb0'; ctx.beginPath(); ctx.arc(cx0, cy0 - r * 0.02, r * 0.05, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
 function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number): void {
-  const bob = Math.sin(e.phase * 6) * 2;
-  const x = e.x, y = e.y + bob, r = e.r;
+  const r = e.r;
+  const frozen = e.st.freeze > 0;
+  const walk = frozen ? 0 : e.phase * 6;
+  const bob = frozen || e.kind === 'boss_lich' ? 0 : -Math.abs(Math.sin(walk)) * Math.min(3, r * 0.15);
+  const x = e.x, y = e.y + bob;
   const lunge = e.attackAnim > 0 ? -Math.sin((e.attackAnim / 0.25) * Math.PI) * 8 : 0;
+  const lean = frozen ? 0 : Math.sin(walk) * 0.05;
+  const pose: Pose = {
+    c: (col) => (e.flash > 0 ? '#ffffff' : frozen ? mixBlue(col) : col),
+    s: walk, atk: e.attackAnim > 0 ? e.attackAnim / 0.25 : 0, t, id: e.id,
+  };
+
   ctx.save();
   ctx.translate(lunge, 0);
-  // shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.beginPath(); ctx.ellipse(x, e.y + r * 0.9, r * 0.9, r * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.32)';
+  ctx.beginPath(); ctx.ellipse(x, e.y + r * 0.95, r * 0.95, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
 
-  const frozen = e.st.freeze > 0;
-  ctx.fillStyle = e.flash > 0 ? '#ffffff' : frozen ? '#9fd9ee' : e.cfg.color;
-  // kind decoration behind body
-  if (e.kind === 'brute') {
-    ctx.beginPath(); ctx.moveTo(x - r * 0.7, y - r * 0.6); ctx.lineTo(x - r * 1.0, y - r * 1.3); ctx.lineTo(x - r * 0.3, y - r * 0.9); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(x + r * 0.7, y - r * 0.6); ctx.lineTo(x + r * 1.0, y - r * 1.3); ctx.lineTo(x + r * 0.3, y - r * 0.9); ctx.fill();
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(lean);
+  ctx.lineJoin = 'round'; ctx.lineWidth = 1.5; ctx.strokeStyle = OUT;
+  switch (e.kind) {
+    case 'grunt': drawGrunt(ctx, r, e.cfg.color, pose); break;
+    case 'runner': drawRunner(ctx, r, e.cfg.color, pose); break;
+    case 'brute': drawBrute(ctx, r, e.cfg.color, pose); break;
+    case 'archer': drawArcher(ctx, r, e.cfg.color, pose); break;
+    case 'shaman': drawShaman(ctx, r, e.cfg.color, pose); break;
+    case 'elite_knight': drawKnight(ctx, r, e.cfg.color, pose); break;
+    case 'boss_lich': drawLich(ctx, r, e.cfg.color, pose); break;
+    default: ctx.fillStyle = pose.c(e.cfg.color); ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
-  if (e.kind === 'shaman') {
-    ctx.beginPath(); ctx.moveTo(x - r, y); ctx.lineTo(x, y - r * 1.8); ctx.lineTo(x + r, y); ctx.fill();
-  }
-  if (e.kind === 'boss_lich') {
-    glow(ctx, x, y, r * 2.2, '#7a3aff', 0.35 + 0.15 * Math.sin(t * 3));
-    for (let i = -2; i <= 2; i++) {
-      ctx.beginPath(); ctx.moveTo(x + i * r * 0.35 - 7, y - r * 0.85); ctx.lineTo(x + i * r * 0.35, y - r * 1.5 + Math.abs(i) * 6); ctx.lineTo(x + i * r * 0.35 + 7, y - r * 0.85); ctx.fill();
-    }
-  }
-  // body
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2; ctx.stroke();
-  if (e.kind === 'elite_knight') {
-    ctx.fillStyle = e.flash > 0 ? '#fff' : '#6c7585';
-    ctx.fillRect(x - r * 0.8, y - r * 0.3, r * 1.6, r * 0.28);
-    ctx.fillStyle = '#d8b24a';
-    ctx.beginPath(); ctx.moveTo(x, y - r - 10); ctx.lineTo(x + 5, y - r + 2); ctx.lineTo(x - 5, y - r + 2); ctx.fill();
-  }
-  if (e.kind === 'archer') {
-    ctx.strokeStyle = '#a9743c'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(x - r - 2, y, r * 0.9, -1.1, 1.1); ctx.stroke();
-  }
-  // eyes
-  const eye = e.kind === 'boss_lich' ? '#8cffb0' : e.kind === 'shaman' ? '#ffd9ff' : '#1a1a1a';
-  ctx.fillStyle = eye;
-  const er = Math.max(1.6, r * 0.12);
-  ctx.beginPath(); ctx.arc(x - r * 0.4, y - r * 0.15, er, 0, Math.PI * 2); ctx.arc(x - r * 0.05, y - r * 0.15, er, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
   ctx.restore();
 
-  // status tints
+  // status visuals
+  const st = e.st;
   if (frozen) {
-    ctx.fillStyle = 'rgba(200,240,255,0.45)';
-    ctx.beginPath(); ctx.arc(x, y, r + 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(190,235,255,0.35)';
+    ctx.beginPath(); ctx.arc(x, y, r * 1.05, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = '#e9fbff'; ctx.lineWidth = 2; ctx.stroke();
-  }
-  if (e.st.burn) {
-    ctx.fillStyle = 'rgba(255,120,40,0.28)';
+    ctx.fillStyle = 'rgba(233,251,255,0.9)';
+    for (let i = 0; i < 4; i++) {
+      const a = i * 1.6 + 0.4, px = x + Math.cos(a) * r * 0.95, py = y + Math.sin(a) * r * 0.95;
+      ctx.beginPath(); ctx.moveTo(px, py - 5); ctx.lineTo(px + 2.5, py); ctx.lineTo(px, py + 5); ctx.lineTo(px - 2.5, py); ctx.closePath(); ctx.fill();
+    }
+  } else if (st.slow) {
+    ctx.fillStyle = 'rgba(120,190,255,0.2)';
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    glow(ctx, x + Math.sin(t * 12 + e.id) * 4, y - r * 0.6, r * 0.8, '#ff7a2f', 0.5);
+    ctx.fillStyle = 'rgba(220,242,255,0.85)';
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x + (i - 1) * r * 0.6, y - r * 0.95 + Math.sin(t * 2 + i) * 2, 1.8, 0, Math.PI * 2); ctx.fill(); }
   }
-  if (e.st.poison.length) { ctx.fillStyle = 'rgba(110,210,70,0.25)'; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
-  if (e.st.weaken) { ctx.strokeStyle = STATUS_COLOR.weaken; ctx.setLineDash([4, 4]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+  if (st.burn) {
+    ctx.fillStyle = 'rgba(255,120,40,0.22)';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      const fx = x + (i - 1) * r * 0.55, ph = (t * 3 + i * 0.37 + e.id * 0.13) % 1;
+      const fy = y - r * 0.2 - ph * r * 0.9, fs = Math.max(3, r * 0.28) * (1 - ph * 0.6);
+      ctx.fillStyle = ph < 0.5 ? '#ff7a2f' : '#ffc24a';
+      ctx.beginPath(); ctx.moveTo(fx, fy - fs * 1.5); ctx.quadraticCurveTo(fx + fs, fy, fx, fy + fs * 0.6); ctx.quadraticCurveTo(fx - fs, fy, fx, fy - fs * 1.5); ctx.fill();
+    }
+  }
+  if (st.poison.length) {
+    ctx.fillStyle = 'rgba(110,210,70,0.18)';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(150,240,100,0.9)'; ctx.lineWidth = 1.2;
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 1.2 + i * 0.33 + e.id * 0.21) % 1;
+      ctx.beginPath(); ctx.arc(x + (i - 1) * r * 0.55 + Math.sin(ph * 8) * 2, y + r * 0.2 - ph * r * 1.3, 2 + (1 - ph) * 2, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  if (st.wet) {
+    ctx.fillStyle = 'rgba(90,170,255,0.9)';
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 1.6 + i * 0.33 + e.id * 0.17) % 1;
+      const dx = x + (i - 1) * r * 0.6, dy = y - r * 0.7 + ph * r * 1.5;
+      ctx.beginPath(); ctx.moveTo(dx, dy - 3); ctx.quadraticCurveTo(dx + 2.5, dy + 1, dx, dy + 3); ctx.quadraticCurveTo(dx - 2.5, dy + 1, dx, dy - 3); ctx.fill();
+    }
+  }
+  if (st.weaken) { ctx.strokeStyle = STATUS_COLOR.weaken; ctx.setLineDash([4, 4]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
 
   // hp bar + icons (boss uses the top bar instead)
   const boss = e.kind === 'boss_lich';
@@ -176,7 +543,6 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number): void {
     ctx.fillRect(x - bw / 2, barY, bw * Math.max(0, e.hp / e.maxHp), 5);
   }
   const icons: [StatusKind, string][] = [];
-  const st = e.st;
   if (st.burn) icons.push(['burn', '']);
   if (st.poison.length) icons.push(['poison', st.poison.length > 1 ? String(st.poison.length) : '']);
   if (st.slow) icons.push(['slow', '']);
@@ -309,7 +675,7 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   }
 
   if (!h.hasShots) label(ctx, 'Spell has no damaging runes', W / 2, H - 34, 18 * u, 'center', '#ffb86b');
-  else if (h.time < 6) label(ctx, 'Click or hold to cast toward the cursor', W / 2, H - 12, 14 * u, 'center', '#c4c9ee');
+  else if (h.time < 6) label(ctx, 'Spell auto-casts - aim with the mouse', W / 2, H - 12, 14 * u, 'center', '#c4c9ee');
 
   // aim line + crosshair
   if (h.mouse.inside && !h.overlay) {

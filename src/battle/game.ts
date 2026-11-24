@@ -1,7 +1,7 @@
 import type { BattleHandle, BattleOptions } from '../contracts';
 import type { EnemyKind } from '../types';
 import { spawnEnemy, sweepDead, updateEnemies, updateEnemyProjectiles } from './enemies';
-import { ELEMENT_COLOR, H, W, newWorld, updateFx } from './model';
+import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, newWorld, updateFx } from './model';
 import { fireShot, updatePlayerProjectiles } from './projectiles';
 import { render, type HudState } from './render';
 import { createSpellStrip } from './spellstrip';
@@ -89,6 +89,8 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   let bannerT = 0;
   const BANNER_DUR = 1.5;
   const casts: { i: number; t: number }[] = [];
+  let lastCast = -99;
+  let lastAim = { x: 500, y: 300 };
   let endT = 0;
   let won = false;
   let ended = false;
@@ -107,6 +109,19 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     waveT = 0;
     phase = 'fight';
     bannerT = BANNER_DUR;
+  }
+
+  /** Where the next cast should go: cursor if over the canvas, else nearest on-screen enemy, else null. */
+  function aimPoint(): { x: number; y: number } | null {
+    if (mouse.inside) return { x: mouse.x, y: mouse.y };
+    let best: { x: number; y: number } | null = null;
+    let bd = Infinity;
+    for (const e of world.enemies) {
+      if (e.dead || e.x - e.r >= W || e.x + e.r <= 0 || e.y < 0 || e.y > H) continue;
+      const d = (e.x - MUZZLE_X) ** 2 + (e.y - MUZZLE_Y) ** 2;
+      if (d < bd) { bd = d; best = { x: e.x, y: e.y }; }
+    }
+    return best;
   }
 
   function finish(victory: boolean): void {
@@ -140,15 +155,22 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
 
     // casting
     charge = Math.min(castTime, charge + dt);
-    if (hasShots && charge >= castTime && (mouseDown || wantFire > 0)) {
-      charge = 0;
-      wantFire = 0;
-      casts.push({ i: 0, t: 0 });
+    if (hasShots && charge >= castTime) {
+      const target = (mouseDown || wantFire > 0) ? { x: mouse.x, y: mouse.y } : aimPoint();
+      if (target) {
+        lastAim = target;
+        charge = 0;
+        wantFire = 0;
+        lastCast = world.time;
+        casts.push({ i: 0, t: 0 });
+      }
     }
     for (const c of casts) {
       c.t -= dt;
       while (c.t <= 0 && c.i < plan.shots.length) {
-        fireShot(world, plan.shots[c.i], mouse.x, mouse.y);
+        const a = aimPoint() ?? lastAim;
+        lastAim = a;
+        fireShot(world, plan.shots[c.i], a.x, a.y);
         flashes.set(plan.shots[c.i].sourceUid, world.time);
         c.i++;
         c.t += stagger;
@@ -205,6 +227,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       } : null,
       overlay: phase === 'ending' ? { text: won ? 'Floor cleared' : 'The wizard has fallen', good: won } : null,
       charge, castTime, hasShots, mouse, orbColor, time: world.time,
+      sinceCast: world.time - lastCast,
       ui: Math.max(1, Math.min(1.7, 1 / scale)),
       hurt: Math.min(1, hurtT / 0.5),
       offX: -offX / scale, viewW: cssW / scale,
