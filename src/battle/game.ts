@@ -218,6 +218,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     const kindName = floor.kind === 'elite' ? 'Elite' : floor.kind === 'boss' ? 'Boss' : '';
     const bk = bannerT / BANNER_DUR;
     const bAlpha = bannerT <= 0 ? 0 : Math.max(0, Math.min(1, (1 - bk) / 0.2, bk / 0.3));
+    const aim = (mouseDown || wantFire > 0) ? mouse : (aimPoint() ?? lastAim);
     const hud: HudState = {
       floor, waveIdx, waveTotal: total,
       banner: bAlpha > 0 ? {
@@ -230,7 +231,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       sinceCast: world.time - lastCast,
       ui: Math.max(1, Math.min(1.7, 1 / scale)),
       hurt: Math.min(1, hurtT / 0.5),
-      offX: -offX / scale, viewW: cssW / scale,
+      offX: -offX / scale, viewW: cssW / scale, pxScale: dpr * scale, aimX: aim.x, aimY: aim.y,
     };
     render(ctx, world, hud);
     ctx.restore();

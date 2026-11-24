@@ -57,6 +57,23 @@ describe('rune catalog', () => {
     }
   });
 
+  it('outputs are at most 2 and complex colors have producers and consumers', () => {
+    for (const d of defs) expect(d.outputs.length, d.id).toBeLessThanOrEqual(2);
+    for (const c of ['Y', 'P', 'T', 'W'] as Color[]) {
+      expect(defs.some((d) => d.outputs.includes(c)), `${c} producer`).toBe(true);
+      expect(defs.some((d) => d.inputs.includes(c)), `${c} consumer`).toBe(true);
+    }
+  });
+
+  it('ids are unique snake_case with descriptions', () => {
+    const ids = defs.map((d) => d.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const d of defs) {
+      expect(d.id, d.id).toMatch(/^[a-z]+(_[a-z]+)*$/);
+      expect(d.description.trim().length, d.id).toBeGreaterThan(0);
+    }
+  });
+
   it('starter kit and graph', () => {
     for (const id of STARTER_KIT) expect(CATALOG[id]).toBeDefined();
     const owned = STARTER_KIT.map((defId, i) => ({ uid: `u${i}`, defId }));

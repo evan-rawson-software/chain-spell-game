@@ -30,9 +30,9 @@
 .rn-rewardbox { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .rn-h2 { margin: 0; font-size: 34px; color: var(--accent); }
 .rn-sub { margin: 0; color: var(--muted); }
-.rn-rewardbox { width: 100%; max-width: 860px; }
+.rn-rewardbox { width: 100%; max-width: 1180px; }
 .rn-cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; margin: 10px 0 6px; width: 100%; }
-.rn-card { flex: 1 1 200px; max-width: 260px; min-width: 200px; box-sizing: border-box; min-height: 250px; padding: 18px; display: flex; flex-direction: column; gap: 10px; text-align: left;
+.rn-card { flex: 1 1 180px; max-width: 214px; min-width: 180px; position: relative; cursor: pointer; box-sizing: border-box; min-height: 250px; padding: 16px; display: flex; flex-direction: column; gap: 10px; text-align: left;
   background: var(--panel); border: 2px solid #3a3352; border-radius: 12px; transition: transform .12s, box-shadow .12s; }
 .rn-card:hover { transform: translateY(-4px); }
 .rn-card.common { border-color: #9a93b3; }
@@ -41,6 +41,12 @@
 .rn-card.common:hover { box-shadow: 0 0 18px rgba(154,147,179,.35); }
 .rn-card.uncommon:hover { box-shadow: 0 0 18px rgba(74,222,128,.35); }
 .rn-card.rare:hover { box-shadow: 0 0 18px rgba(245,197,24,.4); }
+.rn-card.selected { transform: translateY(-4px); background: var(--panel-2); box-shadow: 0 0 0 2px var(--accent), 0 0 22px rgba(139,92,246,.6); }
+.rn-check { position: absolute; top: 8px; right: 8px; width: 24px; height: 24px; border-radius: 50%; display: none; align-items: center; justify-content: center;
+  background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
+.rn-card.selected .rn-check { display: flex; }
+.rn-counter { color: var(--muted); font-size: 14px; }
+.rn-actions { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .rn-card-name { font-size: 20px; font-weight: 700; }
 .rn-card-rarity { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
 .rn-card.uncommon .rn-card-rarity { color: var(--ok); }

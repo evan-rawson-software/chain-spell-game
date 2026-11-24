@@ -78,11 +78,12 @@ When the spell is cast:
 
 ## 4. Combat: real-time waves
 
-- Stationary wizard on one side of the arena; enemies come in waves.
+- The player is a stationary magic circle on the ground; enemies come in waves. The circle grows
+  more animated as the spell charges and pulses when it fires.
 - **Melee enemies** walk to the wizard and damage on arrival/contact.
 - **Ranged enemies** stop at a distance and fire projectiles.
-- **Aimed casting:** the spell charges over its cast time; once charged, the player clicks to
-  fire toward the cursor. **[default]** Holding the mouse button auto-fires whenever charged.
+- **Auto-cast:** the spell charges over its cast time and fires as soon as it is charged: toward
+  the cursor when it is over the arena, otherwise at the nearest enemy.
 - Wizard HP **resets to full at the start of each floor**. Reaching 0 during a floor ends the run.
 
 ### Effect categories in scope
@@ -92,12 +93,13 @@ When the spell is cast:
 | Damage + augments | Fireball (base 40), Amplify (+30% damage), Empower (×1.5 more) |
 | Elements & status | Burn (DoT), Slow/Freeze, Poison stacks, Chain lightning; enemy resistances/weaknesses |
 | Shape modifiers | Split into N projectiles, Pierce, AoE radius, Homing |
+| Branching | Many runes have two outputs (Split, Pierce, Prism Fork, Photosynth…); mergers combine primaries (Prism Merge R+B → P,P; Prismatic Heart R+G+B → W) |
 | Cast-time / mana | Quicken (−cast time, −damage), Thrift (−mana cost), Overload (+damage, +cast time) |
 
 ## 5. Run structure
 
 - **Linear floors.** **[default]** 10 floors: elite on floor 5, boss on floor 10.
-- After each floor: **[default]** pick 1 of 3 runes (rewards are always runes). Elites/bosses
+- After each floor: **[default]** pick 2 of 5 runes (rewards are always runes). Elites/bosses
   offer rarer runes. Max mana goes up automatically (+2 per floor, +3 after the elite).
 - Between floors the player opens the **Rune Editor**: all owned runes sit in an inventory
   and the spell can be fully rebuilt.

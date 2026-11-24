@@ -106,29 +106,29 @@ const defs: Record<string, Def> = {
 
   // ------------------------------------------------------------ Uncommon
   split: {
-    name: 'Split', rarity: 'uncommon', inputs: ['R'], outputs: ['R'], mana: 2, castTime: 0.15,
+    name: 'Split', rarity: 'uncommon', inputs: ['R'], outputs: ['R', 'R'], mana: 3, castTime: 0.15,
     augments: [flat('count', 2), flat('spreadDeg', 20), more('damage', -0.25)],
-    description: 'Passes Red along. Shots beyond it fire 2 extra projectiles in a fan, each 25% weaker.',
+    description: 'Splits one Red stream into two Red streams. Shots beyond it fire 2 extra projectiles in a fan, each 25% weaker.',
   },
   pierce: {
-    name: 'Pierce', rarity: 'uncommon', inputs: ['B'], outputs: ['B'], mana: 2, castTime: 0.1,
+    name: 'Pierce', rarity: 'uncommon', inputs: ['B'], outputs: ['B', 'B'], mana: 3, castTime: 0.1,
     augments: [flat('pierce', 2)],
-    description: 'Passes Blue along. Shots beyond it pass through 2 extra enemies.',
+    description: 'Splits one Blue stream into two Blue streams. Shots beyond it pass through 2 extra enemies.',
   },
   blast: {
-    name: 'Blast', rarity: 'uncommon', inputs: ['R'], outputs: ['R'], mana: 2, castTime: 0.15,
+    name: 'Blast', rarity: 'uncommon', inputs: ['R'], outputs: ['R', 'Y'], mana: 3, castTime: 0.15,
     augments: [flat('aoeRadius', 40)],
-    description: 'Passes Red along. Shots beyond it explode in a 40px radius.',
+    description: 'Splits Red into a Red and a Yellow stream. Shots beyond it explode in a 40px radius.',
   },
   seeker: {
-    name: 'Seeker', rarity: 'uncommon', inputs: ['B'], outputs: ['B'], mana: 2, castTime: 0.1,
+    name: 'Seeker', rarity: 'uncommon', inputs: ['B'], outputs: ['B', 'P'], mana: 3, castTime: 0.1,
     augments: [flat('homing', 3)],
-    description: 'Passes Blue along. Shots beyond it curve toward nearby enemies.',
+    description: 'Splits Blue into a Blue and a Purple stream. Shots beyond it curve toward nearby enemies.',
   },
   chain_link: {
-    name: 'Chain Link', rarity: 'uncommon', inputs: ['Y'], outputs: ['Y'], mana: 2, castTime: 0.1,
+    name: 'Chain Link', rarity: 'uncommon', inputs: ['Y'], outputs: ['Y', 'Y'], mana: 3, castTime: 0.1,
     augments: [flat('chain', 2)],
-    description: 'Passes Yellow along. Shots beyond it jump to 2 more nearby enemies.',
+    description: 'Splits one Yellow stream into two Yellow streams. Shots beyond it jump to 2 more nearby enemies.',
   },
   quicken: {
     name: 'Quicken', rarity: 'uncommon', inputs: ['R'], outputs: ['R'], mana: 2, castTime: -0.1,
@@ -141,14 +141,14 @@ const defs: Record<string, Def> = {
     description: 'Passes Red along. Shots beyond it deal 50% more damage, but the cast takes 0.4s longer.',
   },
   virulence: {
-    name: 'Virulence', rarity: 'uncommon', inputs: ['G'], outputs: ['G'], mana: 2, castTime: 0.1,
+    name: 'Virulence', rarity: 'uncommon', inputs: ['G'], outputs: ['G', 'T'], mana: 3, castTime: 0.1,
     augments: [inc('statusPotency', 0.5)],
-    description: 'Passes Green along. Status effects beyond it are 50% more potent.',
+    description: 'Splits Green into a Green and a Teal stream. Status effects beyond it are 50% more potent.',
   },
   lingering: {
-    name: 'Lingering', rarity: 'uncommon', inputs: ['G'], outputs: ['G'], mana: 2, castTime: 0.1,
+    name: 'Lingering', rarity: 'uncommon', inputs: ['G'], outputs: ['G', 'G'], mana: 3, castTime: 0.1,
     augments: [inc('statusDuration', 0.5)],
-    description: 'Passes Green along. Status effects beyond it last 50% longer.',
+    description: 'Splits one Green stream into two Green streams. Status effects beyond it last 50% longer.',
   },
   lightning_bolt: {
     name: 'Lightning Bolt', rarity: 'uncommon', inputs: ['Y'], outputs: [], mana: 3, castTime: 0.2,
@@ -216,6 +216,112 @@ const defs: Record<string, Def> = {
     name: 'Conduit', rarity: 'rare', inputs: ['Y'], outputs: [], mana: 3, castTime: 0.1,
     globals: [flat('chain', 1), inc('statusPotency', 0.25)],
     description: 'Fires nothing. Every shot in the spell chains 1 extra time and has 25% stronger statuses.',
+  },
+
+  // ------------------------------------------------------------ New: common
+  spectral_split: {
+    name: 'Spectral Split', rarity: 'common', inputs: ['G'], outputs: ['R', 'B'], mana: 2, castTime: 0.1,
+    augments: [inc('statusPotency', 0.15)],
+    description: 'Splits one Green stream into a Red and a Blue stream. Status effects beyond it are 15% more potent.',
+  },
+  teal_weave: {
+    name: 'Teal Weave', rarity: 'common', inputs: ['G', 'B'], outputs: ['T'], mana: 2, castTime: 0.1,
+    augments: [inc('statusDuration', 0.2)],
+    description: 'Weaves a Green and a Blue stream into one Teal stream. Status effects beyond it last 20% longer.',
+  },
+  poison_cloud: {
+    name: 'Poison Cloud', rarity: 'common', inputs: ['G'], outputs: [], mana: 2, castTime: 0.25,
+    shot: shot('nature', 6, { speed: 300, size: 12, aoeRadius: 85, statuses: [st('poison', 5, 5)] }),
+    description: 'A slow toxic cloud: 6 nature damage in a wide area and a stacking poison (5 dps per stack, 5s).',
+  },
+
+  // ------------------------------------------------------------ New: uncommon
+  photosynth: {
+    name: 'Photosynth', rarity: 'uncommon', inputs: ['R'], outputs: ['G', 'G'], mana: 3, castTime: 0.1,
+    augments: [inc('statusDuration', 0.2)],
+    description: 'Turns one Red stream into two Green streams. Status effects beyond it last 20% longer.',
+  },
+  prism_merge: {
+    name: 'Prism Merge', rarity: 'uncommon', inputs: ['R', 'B'], outputs: ['P', 'P'], mana: 3, castTime: 0.15,
+    augments: [inc('damage', 0.15)],
+    description: 'Fuses a Red and a Blue stream into two Purple streams. Shots beyond it deal 15% more damage.',
+  },
+  gilded_weave: {
+    name: 'Gilded Weave', rarity: 'uncommon', inputs: ['R', 'G'], outputs: ['Y', 'Y'], mana: 3, castTime: 0.15,
+    augments: [flat('chain', 1)],
+    description: 'Fuses a Red and a Green stream into two Yellow streams. Shots beyond it chain 1 extra time.',
+  },
+  frost_nova: {
+    name: 'Frost Nova', rarity: 'uncommon', inputs: ['T'], outputs: [], mana: 3, castTime: 0.25,
+    shot: shot('frost', 18, { speed: 380, size: 11, aoeRadius: 80, statuses: [st('freeze', 0, 1.5), st('slow', 0.3, 3)] }),
+    description: 'A burst of killing cold: 18 frost damage in an area that freezes enemies solid for 1.5s, then chills them.',
+  },
+  weaken_beam: {
+    name: 'Weaken Beam', rarity: 'uncommon', inputs: ['Y'], outputs: [], mana: 3, castTime: 0.2,
+    shot: shot('arcane', 10, { speed: 750, size: 6, pierce: 3, statuses: [st('weaken', 0.35, 5)] }),
+    description: 'A piercing ray: 10 arcane damage, and every enemy hit takes 35% more damage from all sources for 5s.',
+  },
+  nature_volley: {
+    name: 'Nature Volley', rarity: 'uncommon', inputs: ['G'], outputs: [], mana: 3, castTime: 0.25,
+    shot: shot('nature', 9, { speed: 520, size: 6, count: 4, spreadDeg: 30, statuses: [st('poison', 2, 3)] }),
+    description: 'Four barbed seeds in a fan: 9 nature damage each, with a light stacking poison.',
+  },
+  void_bolt: {
+    name: 'Void Bolt', rarity: 'uncommon', inputs: ['P'], outputs: [], mana: 3, castTime: 0.25,
+    shot: shot('arcane', 48, { speed: 480, size: 8, pierce: 2 }),
+    description: 'A heavy bolt of the void: 48 arcane damage, piercing 2 extra enemies.',
+  },
+  arc_flash: {
+    name: 'Arc Flash', rarity: 'uncommon', inputs: ['Y'], outputs: [], mana: 3, castTime: 0.2,
+    shot: shot('lightning', 14, { speed: 720, size: 6, count: 3, spreadDeg: 24, chain: 1 }),
+    description: 'Three lightning sparks in a fan: 14 lightning damage each, each chaining once. Strong on Wet targets.',
+  },
+  cyclone: {
+    name: 'Cyclone', rarity: 'uncommon', inputs: ['T'], outputs: [], mana: 3, castTime: 0.25,
+    shot: shot('storm', 30, { speed: 360, size: 11, aoeRadius: 60, pierce: 2, statuses: [st('wet', 0.4, 4)] }),
+    description: 'A tearing whirlwind: 30 storm damage in an area that pierces through enemies and soaks them.',
+  },
+  frenzy_sigil: {
+    name: 'Frenzy Sigil', rarity: 'uncommon', inputs: ['B'], outputs: [], mana: 2, castTime: 0.05,
+    globals: [inc('castTime', -0.3), more('damage', -0.2)],
+    description: 'Fires nothing. The whole spell casts 30% faster, but every shot deals 20% less damage.',
+  },
+  venom_sigil: {
+    name: 'Venom Sigil', rarity: 'uncommon', inputs: ['G'], outputs: [], mana: 2, castTime: 0.1,
+    globals: [inc('statusPotency', 0.5), more('damage', -0.1)],
+    description: 'Fires nothing. Every status in the spell is 50% more potent, but shots deal 10% less direct damage.',
+  },
+
+  // ------------------------------------------------------------ New: rare
+  prismatic_heart: {
+    name: 'Prismatic Heart', rarity: 'rare', inputs: ['R', 'G', 'B'], outputs: ['W'], mana: 4, castTime: 0.2,
+    augments: [more('damage', 0.3)],
+    description: 'Fuses Red, Green and Blue into one White stream. Shots beyond it deal x1.3 damage.',
+  },
+  prism_break: {
+    name: 'Prism Break', rarity: 'rare', inputs: ['W'], outputs: ['P', 'T'], mana: 4, castTime: 0.2,
+    augments: [inc('damage', 0.2), inc('statusPotency', 0.2)],
+    description: 'Shatters a White stream into a Purple and a Teal stream. Shots beyond it deal 20% more damage and have 20% stronger statuses.',
+  },
+  radiant_lance: {
+    name: 'Radiant Lance', rarity: 'rare', inputs: ['W'], outputs: [], mana: 4, castTime: 0.45,
+    shot: shot('pure', 130, { speed: 650, size: 10, pierce: 4 }),
+    description: 'Needs White. A lance of pure light: 130 damage, piercing 4 extra enemies.',
+  },
+  tempest: {
+    name: 'Tempest', rarity: 'rare', inputs: ['W'], outputs: [], mana: 4, castTime: 0.45,
+    shot: shot('storm', 70, { speed: 340, size: 14, aoeRadius: 110, chain: 2, statuses: [st('wet', 0.6, 5)] }),
+    description: 'Needs White. A raging storm: 70 storm damage in a huge area, chaining twice and drenching everything.',
+  },
+  sun_lance: {
+    name: 'Sun Lance', rarity: 'rare', inputs: ['Y'], outputs: [], mana: 4, castTime: 0.35,
+    shot: shot('fire', 75, { speed: 700, size: 9, pierce: 3, statuses: [st('burn', 10, 4)] }),
+    description: 'A beam of searing light: 75 fire damage, piercing 3 extra enemies and setting them ablaze.',
+  },
+  glass_sigil: {
+    name: 'Glass Sigil', rarity: 'rare', inputs: ['R'], outputs: [], mana: 3, castTime: 0.1,
+    globals: [more('damage', 0.35), inc('castTime', 0.3)],
+    description: 'Fires nothing. Every shot deals x1.35 damage, but the whole spell casts 30% slower.',
   },
 };
 

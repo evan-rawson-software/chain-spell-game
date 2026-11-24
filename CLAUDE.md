@@ -59,7 +59,7 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
 - Stacking: `(base + flat) * (1 + sum(increased)) * product(1 + more)`.
 - Terminals fire depth-first, left-to-right, `stagger` seconds apart.
 - Mana is a static build budget that grows automatically per cleared floor (`manaGain` in
-  `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only. Wizard HP resets
+  `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only (pick 2 of 5). Wizard HP resets
   each floor.
 - No meta-progression in the MVP.
 

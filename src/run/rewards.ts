@@ -12,10 +12,14 @@ export function rarityWeights(floor: FloorDef): Record<DropRarity, number> {
   return w;
 }
 
+/** Runes offered per floor, and how many the player may take. */
+export const REWARD_OFFER = 5;
+export const REWARD_PICKS = 2;
+
 export function rollRewards(floor: FloorDef, rng: Rng, catalog: RuneCatalog = CATALOG): Reward[] {
   const pool = Object.values(catalog).filter((d) => d.rarity !== 'starter' && d.id !== SOURCE_ID);
   const weights = rarityWeights(floor);
-  const runeCount = 3;
+  const runeCount = REWARD_OFFER;
 
   const out: Reward[] = [];
   const remaining = [...pool];

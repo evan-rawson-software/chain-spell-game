@@ -3,14 +3,24 @@
   background: var(--bg); color: var(--text); overflow: hidden;
 }
 .re-canvas {
-  position: relative; flex: 1 1 auto; min-width: 0; overflow: auto;
-  display: flex; flex-direction: column;
+  position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden;
+  cursor: grab; touch-action: none; user-select: none;
+  --gx: 0px; --gy: 0px; --gs: 26px;
   background:
-    radial-gradient(circle at 1px 1px, rgba(177, 140, 255, 0.16) 1.2px, transparent 0) 0 0 / 26px 26px,
+    radial-gradient(circle at 1px 1px, rgba(177, 140, 255, 0.16) 1.2px, transparent 0) var(--gx) var(--gy) / var(--gs) var(--gs),
     radial-gradient(ellipse at 50% 40%, rgba(177, 140, 255, 0.07), transparent 70%),
     var(--bg);
 }
-.re-world { position: relative; flex: none; margin: auto; }
+.re-canvas.panning, .re-canvas.panning * { cursor: grabbing !important; }
+.re-layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.re-world { position: relative; }
+.re-ctl {
+  position: absolute; top: 10px; right: 10px; z-index: 6; display: flex; align-items: center; gap: 4px;
+  padding: 4px; border-radius: 10px; background: var(--panel); border: 1px solid #3a3352;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); cursor: default;
+}
+.re-ctl-btn { min-width: 30px; height: 28px; padding: 0 8px; font-size: 15px; font-weight: 700; line-height: 1; }
+.re-ctl-zoom { min-width: 46px; text-align: center; font-size: 13px; font-weight: 600; color: #d6d0ea; }
 .re-world > svg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .re-link { fill: none; stroke-width: 3; stroke-linecap: round; opacity: 0.9; }
 .re-link.ghost { stroke-dasharray: 6 6; opacity: 0.5; stroke-width: 2.5; }
@@ -88,15 +98,15 @@
 }
 
 .re-notice {
-  position: sticky; top: 10px; left: 10px; z-index: 5; align-self: flex-start; flex: none;
-  width: fit-content; max-width: calc(100% - 20px);
-  margin: 10px; padding: 10px 16px; border-radius: 10px; font-size: 14px; line-height: 1.4;
+  position: absolute; top: 10px; left: 10px; z-index: 5;
+  width: fit-content; max-width: calc(100% - 260px); cursor: default;
+  margin: 0; padding: 10px 16px; border-radius: 10px; font-size: 14px; line-height: 1.4;
   background: var(--panel); border: 1px solid #3a3352; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
 }
 .re-notice.warn { border-color: var(--danger); color: #ff9aa3; background: #2a1620; }
 .re-notice.info { border-color: var(--accent); }
 .re-hint {
-  position: sticky; bottom: 0; left: 0; z-index: 4; flex: none; display: flex; flex-wrap: wrap;
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 4; display: flex; flex-wrap: wrap;
   gap: 4px 18px; padding: 9px 16px; font-size: 13px; color: #d6d0ea;
   background: rgba(26, 21, 40, 0.92); border-top: 1px solid #3a3352; pointer-events: none;
 }

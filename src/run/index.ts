@@ -7,7 +7,7 @@ import { COLOR_HEX } from '../types';
 import type { BattleResult, Reward, RunState, RuneDef, SpellGraph } from '../types';
 import { FLOOR_COUNT, floorDef } from './floors';
 import { createRng } from './rng';
-import { rollRewards } from './rewards';
+import { REWARD_PICKS, rollRewards } from './rewards';
 import { applyReward, clearRun, loadRun, manaGain, newRun, saveRun } from './state';
 
 export { FLOOR_COUNT, floorDef } from './floors';
@@ -233,13 +233,27 @@ export function startApp(root: HTMLElement): void {
       }
       const gain = manaGain(f.kind);
       el('div', 'rn-managain', `Max mana ${run.maxMana} → ${run.maxMana + gain} (+${gain} for clearing the floor)`, box);
-      el('p', 'rn-sub', 'Choose a rune', box);
+      el('p', 'rn-sub', `Choose ${REWARD_PICKS} runes`, box);
       const cards = el('div', 'rn-cards', undefined, box);
 
-      const pick = (r: Reward | null): void => {
-        if (r) run = applyReward(run, r);
+      const selected: number[] = [];
+      const cardEls: HTMLElement[] = [];
+      const pick = (picked: Reward[]): void => {
+        for (const r of picked) run = applyReward(run, r);
         run = { ...run, maxMana: run.maxMana + gain, floor: run.floor + 1 };
         prepare();
+      };
+
+      const refresh = (): void => {
+        cardEls.forEach((c, i) => {
+          const on = selected.includes(i);
+          c.classList.toggle('selected', on);
+          c.setAttribute('aria-pressed', String(on));
+        });
+        const n = selected.length;
+        confirm.textContent = n === 0 ? `Take ${REWARD_PICKS} runes` : `Take ${n} rune${n === 1 ? '' : 's'}`;
+        confirm.disabled = n === 0;
+        counter.textContent = `${n} / ${REWARD_PICKS} selected`;
       };
 
       for (const r of rewards) {
@@ -261,9 +275,23 @@ export function startApp(root: HTMLElement): void {
           el('span', 'rn-stat mana', `Mana ${def.mana}`, stats);
           el('span', `rn-stat cast ${def.castTime > 0 ? 'bad' : def.castTime < 0 ? 'good' : ''}`, `Cast ${fmtCast(def.castTime)}`, stats);
         }
-        card.addEventListener('click', () => pick(r));
+        el('span', 'rn-check', '✓', card);
+        const idx = cardEls.length;
+        cardEls.push(card);
+        card.addEventListener('click', () => {
+          const at = selected.indexOf(idx);
+          if (at >= 0) selected.splice(at, 1);
+          else { selected.push(idx); if (selected.length > REWARD_PICKS) selected.shift(); }
+          refresh();
+        });
       }
-      button('Skip', 'rn-btn', () => pick(null), box);
+      const counter = el('div', 'rn-counter', undefined, box);
+      const actions = el('div', 'rn-actions', undefined, box);
+      const confirm = button('', 'rn-btn primary big', () => {
+        pick(selected.map((i) => rewards[i]).filter((r): r is Reward => !!r));
+      }, actions);
+      button('Skip', 'rn-btn', () => pick([]), actions);
+      refresh();
     });
   }
 

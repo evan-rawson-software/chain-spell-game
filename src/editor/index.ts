@@ -93,6 +93,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
 
   const root = h('div', 're-root');
   const canvas = h('div', 're-canvas');
+  const layer = h('div', 're-layer');
+  const controls = h('div', 're-ctl');
   const side = h('div', 're-side');
   root.append(canvas, side);
   container.appendChild(root);
@@ -148,6 +150,161 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     selectedInv = null;
     render();
   }
+
+  // ---------------------------------------------------------- pan / zoom
+  const MIN_SCALE = 0.35;
+  const MAX_SCALE = 2;
+  const view = { x: 0, y: 0, scale: 1 };
+  let worldSize = { w: 0, h: 0 };
+  let fitted = false;
+  let suppressClick = false;
+
+  const zoomLabel = h('span', 're-ctl-zoom', '100%');
+  const mkBtn = (label: string, title: string, fn: () => void): HTMLButtonElement => {
+    const b = h('button', 're-ctl-btn', label) as HTMLButtonElement;
+    b.type = 'button';
+    b.title = title;
+    b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+    return b;
+  };
+  const zoomAtCenter = (f: number): void => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, view.scale * f);
+  controls.append(
+    mkBtn('−', 'Zoom out', () => zoomAtCenter(1 / 1.25)),
+    zoomLabel,
+    mkBtn('+', 'Zoom in', () => zoomAtCenter(1.25)),
+    mkBtn('Fit', 'Fit the whole spell in view', () => fitView(true)),
+  );
+
+  function applyView(): void {
+    layer.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+    canvas.style.setProperty('--gs', `${26 * view.scale}px`);
+    canvas.style.setProperty('--gx', `${view.x}px`);
+    canvas.style.setProperty('--gy', `${view.y}px`);
+    zoomLabel.textContent = `${Math.round(view.scale * 100)}%`;
+  }
+  function zoomAt(cx: number, cy: number, target: number): void {
+    const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, target));
+    const k = s / view.scale;
+    view.x = cx - (cx - view.x) * k;
+    view.y = cy - (cy - view.y) * k;
+    view.scale = s;
+    applyView();
+  }
+  function fitView(force: boolean): void {
+    const vw = canvas.clientWidth;
+    const vh = canvas.clientHeight;
+    if (vw < 50 || vh < 50 || worldSize.w <= 0) return; // not laid out yet; ResizeObserver retries
+    if (!force && fitted) return;
+    const pad = 24;
+    const s = Math.min(1, Math.max(MIN_SCALE, Math.min((vw - pad * 2) / worldSize.w, (vh - pad * 2 - 40) / worldSize.h)));
+    view.scale = s;
+    view.x = (vw - worldSize.w * s) / 2;
+    view.y = Math.max(pad, (vh - worldSize.h * s) / 2);
+    fitted = true;
+    applyView();
+  }
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => { if (!fitted) fitView(false); }) : null;
+  ro?.observe(canvas);
+
+  const pointers = new Map<number, { x: number; y: number }>();
+  let panId: number | null = null;
+  let panStart = { x: 0, y: 0, vx: 0, vy: 0 };
+  let dragging = false;
+  let pinch: { dist: number; scale: number } | null = null;
+  const isBackground = (t: EventTarget | null): boolean =>
+    !(t instanceof Element) || !t.closest('.re-card, .re-ctl, .re-notice');
+  const local = (e: PointerEvent | WheelEvent): { x: number; y: number } => {
+    const r = canvas.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const pinchDist = (): number => {
+    const [a, b] = [...pointers.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.target instanceof Element && e.target.closest('.re-ctl')) return;
+    const middle = e.button === 1;
+    if (e.button !== 0 && !middle) return;
+    if (middle) e.preventDefault();
+    if (e.pointerType === 'mouse') {
+      // a mouse has one pointer: drop any stale entry (e.g. released outside the window)
+      pointers.clear();
+      pinch = null;
+      dragging = false;
+      canvas.classList.remove('panning');
+      if (!middle && !isBackground(e.target)) return;
+    }
+    pointers.set(e.pointerId, local(e));
+    if (pointers.size === 2) {
+      // second finger: switch to pinch zoom
+      panId = null;
+      pinch = { dist: pinchDist() || 1, scale: view.scale };
+      dragging = true;
+      for (const id of pointers.keys()) { try { canvas.setPointerCapture(id); } catch { /* ignore */ } }
+      return;
+    }
+    if (pointers.size === 1 && (middle || isBackground(e.target))) {
+      panId = e.pointerId;
+      const p = local(e);
+      panStart = { x: p.x, y: p.y, vx: view.x, vy: view.y };
+      dragging = false;
+      if (middle) {
+        dragging = true;
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        canvas.classList.add('panning');
+      }
+    }
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    const p = local(e);
+    pointers.set(e.pointerId, p);
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      zoomAt((a.x + b.x) / 2, (a.y + b.y) / 2, pinch.scale * (pinchDist() / pinch.dist));
+      hideTip();
+      return;
+    }
+    if (panId !== e.pointerId) return;
+    if (!dragging) {
+      if (Math.hypot(p.x - panStart.x, p.y - panStart.y) < 4) return;
+      dragging = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      canvas.classList.add('panning');
+    }
+    view.x = panStart.vx + (p.x - panStart.x);
+    view.y = panStart.vy + (p.y - panStart.y);
+    applyView();
+  });
+  const endPointer = (e: PointerEvent): void => {
+    if (!pointers.delete(e.pointerId)) return;
+    if (dragging) {
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+    if (pointers.size < 2) pinch = null;
+    if (panId === e.pointerId) panId = null;
+    if (pointers.size === 0) {
+      dragging = false;
+      canvas.classList.remove('panning');
+    } else if (pointers.size === 1 && dragging) {
+      // continue panning with the remaining finger
+      const [id, p] = [...pointers.entries()][0];
+      panId = id;
+      panStart = { x: p.x, y: p.y, vx: view.x, vy: view.y };
+    }
+  };
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const p = local(e);
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    zoomAt(p.x, p.y, view.scale * Math.exp(-e.deltaY * unit * (e.ctrlKey ? 0.01 : 0.0015)));
+    hideTip();
+  }, { passive: false });
+  canvas.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
 
   // ---------------------------------------------------------- render
   function levelsOf(): Record<string, number> {
@@ -217,8 +374,6 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   function render(): void {
     if (destroyed) return;
     hideTip();
-    const prevL = canvas.scrollLeft;
-    const prevT = canvas.scrollTop;
 
     const levels = levelsOf();
     const open = openOutputs(graph, catalog);
@@ -293,6 +448,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const world = h('div', 're-world');
     world.style.width = `${worldW}px`;
     world.style.height = `${worldH}px`;
+    worldSize = { w: worldW, h: worldH };
 
     const svg = document.createElementNS(SVGNS, 'svg');
     svg.setAttribute('width', String(worldW));
@@ -400,9 +556,9 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       });
     }
 
-    canvas.replaceChildren();
+    layer.replaceChildren(world);
+    canvas.replaceChildren(layer, controls);
     if (infoMsg) canvas.appendChild(h('div', `re-notice ${infoMsg.kind}`, infoMsg.text));
-    canvas.appendChild(world);
     const hint = h('div', 're-hint');
     const hintItems: [string, string][] = [
       ['Place', 'click a rune in the inventory, then a ghost slot'],
@@ -415,9 +571,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       hint.appendChild(it);
     }
     canvas.appendChild(hint);
-    canvas.scrollLeft = prevL;
-    canvas.scrollTop = prevT;
 
+    if (!fitted) fitView(false);
     renderSide();
   }
 
@@ -568,6 +723,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
 
   // ---------------------------------------------------------- global events
   canvas.addEventListener('click', () => {
+    if (suppressClick) return;
     if (selectedInv || selectedNode || notice) {
       clearSelection();
       render();
@@ -587,6 +743,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     destroy(): void {
       destroyed = true;
       document.removeEventListener('keydown', onKey);
+      ro?.disconnect();
       root.remove();
       tooltip.remove();
     },

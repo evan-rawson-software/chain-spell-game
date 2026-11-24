@@ -1,6 +1,8 @@
 import type { FloorDef, StatusKind } from '../types';
+import { drawArena } from './arena';
+import { drawMagicCircle } from './circle';
 import {
-  ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, STATUS_COLOR, W, WIZ_X, WIZ_Y,
+  ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, STATUS_COLOR, W,
   type Enemy, type World,
 } from './model';
 
@@ -25,165 +27,24 @@ export interface HudState {
   /** world-x of the left edge and width of the visible area (letterbox included) */
   offX: number;
   viewW: number;
+  /** device pixels per world unit */
+  pxScale: number;
+  /** where the next cast will be aimed (world coords) */
+  aimX: number;
+  aimY: number;
 }
 
-const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.9, r: Math.random() * 1.4 + 0.3, p: Math.random() * 6 }));
-
 export function render(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
-  drawBackground(ctx, h.time);
-  drawWizard(ctx, w, h);
+  drawArena(ctx, h.floor, h.time, h.pxScale, h.offX, h.viewW);
+  drawMagicCircle(ctx, w, {
+    time: h.time, progress: h.castTime > 0 ? h.charge / h.castTime : 0, hasShots: h.hasShots,
+    sinceCast: h.sinceCast, color: h.orbColor, aimX: h.aimX, aimY: h.aimY,
+  });
   for (const e of w.enemies) drawEnemy(ctx, e, h.time);
   drawEnemyProjectiles(ctx, w);
   drawPlayerProjectiles(ctx, w);
   drawEffects(ctx, w);
   drawHud(ctx, w, h);
-}
-
-function drawBackground(ctx: CanvasRenderingContext2D, t: number): void {
-  const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#0d1022');
-  g.addColorStop(0.6, '#171a33');
-  g.addColorStop(1, '#241d38');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, W, H);
-  for (const s of stars) {
-    ctx.globalAlpha = 0.35 + 0.35 * Math.sin(t * 1.5 + s.p);
-    ctx.fillStyle = '#cfd8ff';
-    ctx.fillRect(s.x, s.y, s.r, s.r);
-  }
-  ctx.globalAlpha = 1;
-  // ground band
-  ctx.fillStyle = 'rgba(255,255,255,0.025)';
-  for (let y = 40; y < H; y += 80) ctx.fillRect(0, y, W, 1);
-  const rg = ctx.createRadialGradient(WIZ_X, WIZ_Y + 30, 10, WIZ_X, WIZ_Y + 30, 160);
-  rg.addColorStop(0, 'rgba(120,100,220,0.28)');
-  rg.addColorStop(1, 'rgba(120,100,220,0)');
-  ctx.fillStyle = rg;
-  ctx.fillRect(0, WIZ_Y - 140, 260, 340);
-}
-
-function drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, ro: number, ri: number, fill: string): void {
-  ctx.fillStyle = fill;
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const rr = i % 2 ? ri : ro;
-    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
-  }
-  ctx.closePath(); ctx.fill();
-}
-
-function drawWizard(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
-  const t = h.time;
-  const flash = w.wizFlash > 0;
-  const dead = w.wizHp <= 0;
-  const k = Math.max(0, 1 - h.sinceCast / 0.28); // recoil 1 -> 0 after a cast
-  const charge = h.hasShots ? Math.min(1, h.charge / h.castTime) : 0;
-  const bob = dead ? 0 : Math.sin(t * 2.2) * 1.6;
-  const sway = dead ? 0 : Math.sin(t * 1.3) * 0.025;
-  const x = WIZ_X - 4 * k, y = WIZ_Y + bob;
-  const outline = 'rgba(8,8,24,0.85)';
-
-  ctx.save();
-  if (dead) ctx.globalAlpha = 0.5;
-  // ground shadow
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.beginPath(); ctx.ellipse(WIZ_X, WIZ_Y + 40, 30, 7, 0, 0, Math.PI * 2); ctx.fill();
-
-  // staff (behind body), anchored at the muzzle
-  const sx0 = x + 28, sy0 = WIZ_Y + 40;
-  ctx.strokeStyle = outline; ctx.lineWidth = 5; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(MUZZLE_X - 4, MUZZLE_Y + 6); ctx.stroke();
-  ctx.strokeStyle = flash ? '#fff' : '#9a7648'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(MUZZLE_X - 4, MUZZLE_Y + 6); ctx.stroke();
-
-  // body sways around the feet
-  ctx.save();
-  ctx.translate(x, WIZ_Y + 38);
-  ctx.rotate(sway);
-  ctx.translate(-x, -(WIZ_Y + 38));
-
-  // robe
-  const rg = ctx.createLinearGradient(0, y - 14, 0, y + 38);
-  rg.addColorStop(0, flash ? '#fff' : '#6a70d4');
-  rg.addColorStop(1, flash ? '#fff' : '#2a2e78');
-  const amp = 1 + 3.5 * k + 1.5 * charge;
-  ctx.fillStyle = rg; ctx.strokeStyle = outline; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(x - 9, y - 12);
-  ctx.quadraticCurveTo(x - 16, y + 12, x - 27, y + 36);
-  for (let i = 0; i <= 6; i++) {
-    const px = x - 27 + (54 * i) / 6;
-    ctx.lineTo(px, y + 36 + Math.sin(t * 9 + i * 1.7) * amp * (i % 2 ? 1 : 0.5));
-  }
-  ctx.quadraticCurveTo(x + 16, y + 12, x + 9, y - 12);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
-  if (k > 0 && !flash) { // cast flicker: tint with the spell color
-    ctx.save(); ctx.globalAlpha = 0.35 * k; ctx.fillStyle = h.orbColor; ctx.fill(); ctx.restore();
-  }
-  if (!flash) {
-    // sash + hem trim
-    ctx.fillStyle = '#4a50b0';
-    ctx.beginPath(); ctx.moveTo(x - 3, y - 10); ctx.lineTo(x + 3, y - 10); ctx.lineTo(x + 6, y + 34); ctx.lineTo(x - 6, y + 34); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#e0b84a'; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(x - 26, y + 33); ctx.lineTo(x + 26, y + 33); ctx.stroke();
-    ctx.fillStyle = '#e0b84a';
-    ctx.fillRect(x - 10, y + 2, 20, 3);
-  }
-  // shoulders / arm to staff
-  ctx.strokeStyle = outline; ctx.lineWidth = 7; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x + 6, y - 8); ctx.lineTo(x + 24, y + 4); ctx.stroke();
-  ctx.strokeStyle = flash ? '#fff' : '#4f55bb'; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.moveTo(x + 6, y - 8); ctx.lineTo(x + 24, y + 4); ctx.stroke();
-  // hands
-  ctx.fillStyle = flash ? '#fff' : '#f0d2b0'; ctx.strokeStyle = outline; ctx.lineWidth = 1.5;
-  for (const hy of [y + 4, y + 20]) { ctx.beginPath(); ctx.arc(MUZZLE_X - 4 + 0.5, hy, 3.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
-
-  // head
-  ctx.fillStyle = flash ? '#fff' : '#f0d2b0';
-  ctx.beginPath(); ctx.arc(x, y - 19, 8.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#1a1a2a'; // eye (looking right, toward the enemies)
-  ctx.beginPath(); ctx.arc(x + 4, y - 20, 1.5, 0, Math.PI * 2); ctx.fill();
-  // beard
-  ctx.fillStyle = flash ? '#fff' : '#ececf4'; ctx.strokeStyle = outline; ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(x - 8, y - 18);
-  ctx.quadraticCurveTo(x - 7, y - 10, x + 1, y + 2 + Math.sin(t * 3) * 0.8);
-  ctx.quadraticCurveTo(x + 8, y - 10, x + 8, y - 17);
-  ctx.quadraticCurveTo(x, y - 14, x - 8, y - 18);
-  ctx.fill(); ctx.stroke();
-  // hat: brim, bent cone, band, star
-  const hatC = flash ? '#fff' : '#2a2d6e';
-  ctx.fillStyle = hatC; ctx.strokeStyle = outline; ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(x - 12, y - 26);
-  ctx.quadraticCurveTo(x - 9, y - 46, x + 8, y - 58);
-  ctx.quadraticCurveTo(x + 20, y - 62, x + 21, y - 50);
-  ctx.quadraticCurveTo(x + 10, y - 48, x + 12, y - 26);
-  ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.ellipse(x, y - 26, 21, 5.5, -0.06, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  if (!flash) {
-    ctx.strokeStyle = '#e0b84a'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(x - 11.5, y - 29); ctx.quadraticCurveTo(x, y - 25, x + 11.5, y - 29); ctx.stroke();
-    drawStar(ctx, x - 1, y - 40, 4.2, 1.8, '#ffe27a');
-    ctx.fillStyle = '#ffe27a'; // little moon
-    ctx.beginPath(); ctx.arc(x + 11, y - 52, 2.6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#2a2d6e'; ctx.beginPath(); ctx.arc(x + 12.2, y - 52.8, 2.3, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-
-  // staff head + orb
-  const ox = MUZZLE_X, oy = MUZZLE_Y;
-  ctx.strokeStyle = flash ? '#fff' : '#c9a35c'; ctx.lineWidth = 2.5;
-  ctx.beginPath(); ctx.arc(ox, oy + 3, 8, Math.PI * 0.85, Math.PI * 2.15); ctx.stroke();
-  const pulse = 0.8 + 0.2 * Math.sin(t * 5) + charge * 0.6 + k * 0.9;
-  glow(ctx, ox, oy, 16 * pulse, h.orbColor, 0.7);
-  if (k > 0) glow(ctx, ox, oy, 30 * k + 10, h.orbColor, 0.6 * k);
-  ctx.fillStyle = h.orbColor;
-  ctx.beginPath(); ctx.arc(ox, oy, 5.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(ox - 1, oy - 1, 2.8, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
 }
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, alpha: number): void {

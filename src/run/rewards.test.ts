@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rollRewards } from './rewards';
+import { REWARD_OFFER, rollRewards } from './rewards';
 import { createRng } from './rng';
 import { floorDef } from './floors';
 import type { Rarity, RuneCatalog, RuneDef } from '../types';
@@ -9,7 +9,7 @@ const mk = (id: string, rarity: Rarity): RuneDef => ({
 });
 const cat: RuneCatalog = {};
 const entries: [string, Rarity][] = [['source', 'starter'], ['fb', 'starter'], ['a', 'common'], ['b', 'common'],
-  ['c', 'common'], ['d', 'uncommon'], ['e', 'uncommon'], ['f', 'rare'], ['g', 'rare']];
+  ['c', 'common'], ['h', 'common'], ['d', 'uncommon'], ['e', 'uncommon'], ['f', 'rare'], ['g', 'rare']];
 for (const [id, r] of entries) cat[id] = mk(id, r);
 
 describe('rollRewards', () => {
@@ -18,15 +18,15 @@ describe('rollRewards', () => {
       expect(rollRewards(floorDef(n), createRng(42 + n), cat)).toEqual(rollRewards(floorDef(n), createRng(42 + n), cat));
     }
   });
-  it('returns 3 distinct options, no starters', () => {
+  it('returns 5 distinct options, no starters', () => {
     for (let s = 0; s < 200; s++) {
       for (const n of [1, 5, 7, 10]) {
         const r = rollRewards(floorDef(n), createRng(s), cat);
-        expect(r).toHaveLength(3);
-        expect(new Set(r.map((x) => x.defId)).size).toBe(3);
+        expect(r).toHaveLength(REWARD_OFFER);
+        expect(new Set(r.map((x) => x.defId)).size).toBe(REWARD_OFFER);
         for (const x of r) {
           expect(x.kind).toBe('rune');
-          expect(['a', 'b', 'c', 'd', 'e', 'f', 'g']).toContain(x.defId);
+          expect(['a', 'b', 'c', 'h', 'd', 'e', 'f', 'g']).toContain(x.defId);
         }
       }
     }
