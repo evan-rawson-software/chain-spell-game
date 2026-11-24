@@ -50,14 +50,17 @@ reward or defeat screen.
 ## Key rules (summary of DESIGN.md)
 
 - Colors are bitmasks (R=1, G=2, B=4). A complex input (Y/P/T/W) takes one exact-color output or
-  several disjoint primaries from runes on the **same level**. Matching is strict otherwise.
+  several disjoint primaries from runes on the **same level**. A complex output can feed a primary
+input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/index.ts`.
 - All of a rune's inputs come from a single level; rune level = parents' level + 1. Merges and
   multi-input terminals make the spell a DAG.
 - Augments on branching runes apply only to descendants; a shared ancestor counts once.
   Terminal runes with `globals` affect every shot.
 - Stacking: `(base + flat) * (1 + sum(increased)) * product(1 + more)`.
 - Terminals fire depth-first, left-to-right, `stagger` seconds apart.
-- Mana is a static build budget; cast time is the in-combat cost. Wizard HP resets each floor.
+- Mana is a static build budget that grows automatically per cleared floor (`manaGain` in
+  `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only. Wizard HP resets
+  each floor.
 - No meta-progression in the MVP.
 
 ## Working conventions

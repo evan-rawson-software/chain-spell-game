@@ -35,6 +35,7 @@ const CAT: RuneCatalog = {
   arc: def('arc', { inputs: ['P'], shot: shot({ element: 'arcane', damage: 10 }) }),
   triple: def('triple', { inputs: ['R', 'R', 'B'], shot: shot({ damage: 5 }) }),
   white: def('white', { inputs: ['W'], shot: shot({ element: 'pure' }) }),
+  thorn: def('thorn', { inputs: ['G'], shot: shot({ element: 'nature' }) }),
   catalyst: def('catalyst', {
     inputs: ['R'],
     globals: [{ stat: 'damage', op: 'increased', value: 0.5 }],
@@ -123,14 +124,21 @@ describe('openOutputs & placements', () => {
     expect(findPlacements(rootGraph(), CAT, CAT.white)).toEqual([]);
   });
 
-  it('a P output cannot feed an R input', () => {
+  it('a P output feeds R or B inputs (its components) but not G or W', () => {
     let g = add(rootGraph(), 'a', 'amp');
     g = add(g, 'b', 'bamp');
     g = add(g, 'm', 'mixer');
     const open = openOutputs(g, CAT).filter((o) => o.uid === 'm');
     expect(open[0].color).toBe('P');
-    expect(findPlacements(g, CAT, CAT.fire).some((p) => p.inputs[0][0].uid === 'm')).toBe(false);
-    expect(findPlacements(g, CAT, CAT.arc).some((p) => p.inputs[0][0].uid === 'm')).toBe(true);
+    const fromM = (p: Placement) => p.inputs.some((grp) => grp.length === 1 && grp[0].uid === 'm');
+    expect(findPlacements(g, CAT, CAT.fire).some(fromM)).toBe(true);
+    expect(findPlacements(g, CAT, CAT.frost).some(fromM)).toBe(true);
+    expect(findPlacements(g, CAT, CAT.arc).some(fromM)).toBe(true);
+    expect(findPlacements(g, CAT, CAT.thorn).some(fromM)).toBe(false);
+    expect(findPlacements(g, CAT, CAT.white).some(fromM)).toBe(false);
+    // and the resulting graph validates
+    g = add(g, 'f', 'fire', fromM);
+    expect(validateSpell(g, CAT, 99).valid).toBe(true);
   });
 
   it('merges R + B on the same level into a P input', () => {

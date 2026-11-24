@@ -8,7 +8,7 @@ import type { BattleResult, Reward, RunState, RuneDef, SpellGraph } from '../typ
 import { FLOOR_COUNT, floorDef } from './floors';
 import { createRng } from './rng';
 import { rollRewards } from './rewards';
-import { applyReward, clearRun, loadRun, newRun, saveRun } from './state';
+import { applyReward, clearRun, loadRun, manaGain, newRun, saveRun } from './state';
 
 export { FLOOR_COUNT, floorDef } from './floors';
 export { rollRewards } from './rewards';
@@ -231,23 +231,20 @@ export function startApp(root: HTMLElement): void {
         const line = el('div', 'rn-battlesum', undefined, box);
         for (const t of [`${r.kills} kills`, `${Math.round(r.damageTaken)} damage taken`, `${fmtTime(r.durationSec)} time`]) el('span', 'rn-chip', t, line);
       }
-      el('p', 'rn-sub', 'Choose a reward', box);
+      const gain = manaGain(f.kind);
+      el('div', 'rn-managain', `Max mana ${run.maxMana} → ${run.maxMana + gain} (+${gain} for clearing the floor)`, box);
+      el('p', 'rn-sub', 'Choose a rune', box);
       const cards = el('div', 'rn-cards', undefined, box);
 
       const pick = (r: Reward | null): void => {
         if (r) run = applyReward(run, r);
-        run = { ...run, floor: run.floor + 1 };
+        run = { ...run, maxMana: run.maxMana + gain, floor: run.floor + 1 };
         prepare();
       };
 
       for (const r of rewards) {
         const card = el('button', 'rn-card', undefined, cards);
-        if (r.kind === 'maxMana') {
-          card.classList.add('mana');
-          el('div', 'rn-card-name', `+${r.amount} Max Mana`, card);
-          el('div', 'rn-card-rarity', 'Upgrade', card);
-          el('div', 'rn-card-desc', `Raise your mana budget from ${run.maxMana} to ${run.maxMana + r.amount}, so bigger spells fit.`, card);
-        } else {
+        {
           const def = CATALOG[r.defId];
           if (!def) continue;
           card.classList.add(def.rarity);

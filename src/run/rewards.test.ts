@@ -23,15 +23,17 @@ describe('rollRewards', () => {
       for (const n of [1, 5, 7, 10]) {
         const r = rollRewards(floorDef(n), createRng(s), cat);
         expect(r).toHaveLength(3);
-        const keys = r.map((x) => (x.kind === 'rune' ? x.defId : 'mana'));
-        expect(new Set(keys).size).toBe(3);
-        for (const x of r) if (x.kind === 'rune') expect(['a', 'b', 'c', 'd', 'e', 'f', 'g']).toContain(x.defId);
+        expect(new Set(r.map((x) => x.defId)).size).toBe(3);
+        for (const x of r) {
+          expect(x.kind).toBe('rune');
+          expect(['a', 'b', 'c', 'd', 'e', 'f', 'g']).toContain(x.defId);
+        }
       }
     }
   });
-  it('elite and boss floors include +3 max mana', () => {
-    for (const n of [5, 10]) {
-      expect(rollRewards(floorDef(n), createRng(7), cat)).toContainEqual({ kind: 'maxMana', amount: 3 });
+  it('never offers max mana (it grows automatically)', () => {
+    for (let s = 0; s < 50; s++) {
+      for (const n of [1, 5, 10]) for (const x of rollRewards(floorDef(n), createRng(s), cat)) expect(x.kind).toBe('rune');
     }
   });
 });

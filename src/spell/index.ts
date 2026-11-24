@@ -29,9 +29,20 @@ export function colorsCombine(parts: Color[], target: Color): boolean {
   return acc === t;
 }
 
-/** One exact match, or a legal combination. */
+const isPrimary = (c: Color): boolean => c === 'R' || c === 'G' || c === 'B';
+
+/**
+ * Can a single output of color `out` feed an input of color `target`?
+ * Exact match, or a complex output feeding a primary input it contains (Y -> R or G, W -> any primary).
+ */
+export function outputFeeds(out: Color, target: Color): boolean {
+  if (out === target) return true;
+  return isPrimary(target) && (COLOR_BITS[out] & COLOR_BITS[target]) !== 0;
+}
+
+/** One matching output, or a legal combination. */
 function inputSatisfied(target: Color, outs: Color[]): boolean {
-  if (outs.length === 1) return outs[0] === target;
+  if (outs.length === 1) return outputFeeds(outs[0], target);
   return colorsCombine(outs, target);
 }
 
@@ -174,9 +185,9 @@ export function findPlacements(graph: SpellGraph, catalog: RuneCatalog, def: Run
         chosen.pop();
         for (const j of idxs) used.delete(j);
       };
-      // single exact matches
+      // single matching outputs (exact, or a complex output containing a primary target)
       for (let a = 0; a < outs.length; a++) {
-        if (used.has(a) || outs[a].color !== target) continue;
+        if (used.has(a) || !outputFeeds(outs[a].color, target)) continue;
         tryGroup([a]);
         if (results.length >= MAX_PLACEMENTS) return;
       }

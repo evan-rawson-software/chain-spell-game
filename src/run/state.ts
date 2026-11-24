@@ -1,5 +1,5 @@
 import { ROOT_UID, STARTER_KIT, starterGraph } from '../data/runes';
-import type { Reward, RunState, RuneInstance } from '../types';
+import type { FloorDef, Reward, RunState, RuneInstance } from '../types';
 
 export const MAX_MANA_START = 8;
 export const WIZARD_HP = 100;
@@ -13,9 +13,13 @@ export function newRun(seed: number = (Date.now() ^ Math.floor(Math.random() * 0
   return { floor: 1, owned, graph: starterGraph(owned), maxMana: MAX_MANA_START, wizardMaxHp: WIZARD_HP, seed };
 }
 
+/** Max mana gained automatically for clearing a floor of this kind. */
+export function manaGain(kind: FloorDef['kind']): number {
+  return kind === 'normal' ? 2 : 3;
+}
+
 /** Pure: returns a new state with the reward applied (floor is NOT advanced here). */
 export function applyReward(state: RunState, reward: Reward): RunState {
-  if (reward.kind === 'maxMana') return { ...state, maxMana: state.maxMana + reward.amount };
   const used = new Set(state.owned.map((o) => o.uid));
   let n = state.owned.length;
   while (used.has(`${reward.defId}-${n}`)) n++;

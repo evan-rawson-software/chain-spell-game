@@ -30,7 +30,9 @@ A complex input is satisfied by either:
 2. a combination of open outputs from runes on the **same tree level** whose colors add up to it
    (e.g. a Red output + a Blue output on level 2 → one Purple input on level 3).
 
-**[default]** Matching is strict: a Purple output cannot feed a Red input.
+A complex output can also feed a **primary** input that is one of its components
+(Purple → Red or Blue; White → any primary). It can't feed a different complex input
+(Purple can't feed Yellow or White on its own).
 
 **[default]** Color ↔ element: Red = Fire, Blue = Frost, Green = Nature/Poison,
 Yellow = Lightning, Purple = Arcane, Teal = Storm, White = Pure.
@@ -69,7 +71,8 @@ When the spell is cast:
 ## 3. Limits on spell size
 
 - **Mana (static build budget):** total rune mana cost must fit under the wizard's max mana.
-  Not spent in combat. Some rewards raise max mana.
+  Not spent in combat. Max mana rises automatically after each cleared floor (+2, or +3 after
+  the elite floor).
 - **Cast time:** spell cast time = base + sum of rune cast times. Bigger spells fire less often.
   Some runes reduce cast time or mana cost as a tradeoff.
 
@@ -94,8 +97,8 @@ When the spell is cast:
 ## 5. Run structure
 
 - **Linear floors.** **[default]** 10 floors: elite on floor 5, boss on floor 10.
-- After each floor: **[default]** pick 1 of 3 runes. Elites/bosses offer rarer runes or a
-  +max-mana upgrade.
+- After each floor: **[default]** pick 1 of 3 runes (rewards are always runes). Elites/bosses
+  offer rarer runes. Max mana goes up automatically (+2 per floor, +3 after the elite).
 - Between floors the player opens the **Rune Editor**: all owned runes sit in an inventory
   and the spell can be fully rebuilt.
 

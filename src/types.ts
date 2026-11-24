@@ -205,6 +205,5 @@ export interface RunState {
   seed: number;
 }
 
-export type Reward =
-  | { kind: 'rune'; defId: string }
-  | { kind: 'maxMana'; amount: number };
+/** Floor rewards are always runes. Max mana grows automatically per floor (see run/state.ts). */
+export type Reward = { kind: 'rune'; defId: string };

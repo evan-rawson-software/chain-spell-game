@@ -15,10 +15,7 @@ export function rarityWeights(floor: FloorDef): Record<DropRarity, number> {
 export function rollRewards(floor: FloorDef, rng: Rng, catalog: RuneCatalog = CATALOG): Reward[] {
   const pool = Object.values(catalog).filter((d) => d.rarity !== 'starter' && d.id !== SOURCE_ID);
   const weights = rarityWeights(floor);
-  const special: Reward | null =
-    floor.kind !== 'normal' ? { kind: 'maxMana', amount: 3 }
-      : rng.next() < 0.15 ? { kind: 'maxMana', amount: 2 } : null;
-  const runeCount = special ? 2 : 3;
+  const runeCount = 3;
 
   const out: Reward[] = [];
   const remaining = [...pool];
@@ -29,6 +26,5 @@ export function rollRewards(floor: FloorDef, rng: Rng, catalog: RuneCatalog = CA
     remaining.splice(remaining.indexOf(def), 1);
     out.push({ kind: 'rune', defId: def.id });
   }
-  if (special) out.splice(rng.int(out.length + 1), 0, special);
   return out;
 }
