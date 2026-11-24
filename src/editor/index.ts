@@ -1,19 +1,23 @@
 import './editor.css';
 import { COLOR_HEX } from '../types';
-import type { Color, Element, OutputRef, RuneDef, RuneInstance, SpellGraph } from '../types';
+import type { Color, Element, Modifier, OutputRef, RuneDef, RuneInstance, SpellGraph } from '../types';
 import type { EditorHandle, EditorOptions, MountEditor, Placement } from '../contracts';
 import {
   compileSpell, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
 } from '../spell';
 import { runeTooltip } from '../data/runes';
 
-const CARD_W = 156;
-const HEAD = 30;
-const ROW = 24;
-const COL_GAP = 90;
-const ROW_GAP = 22;
-const PAD_X = 28;
-const PAD_Y = 34;
+const CARD_W = 190;
+const SOCK0 = 34;
+const ROW = 30;
+const BODY_H = 78;
+const COL_GAP = 100;
+const ROW_GAP = 26;
+const PAD_X = 36;
+const PAD_Y = 44;
+const RARITY_COLOR: Record<string, string> = {
+  starter: '#8d86a6', common: '#b9c0cc', uncommon: '#46a758', rare: '#f5c518',
+};
 const MAX_GHOSTS = 12;
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -35,17 +39,46 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 function pip(c: Color): HTMLElement {
-  const p = h('span', 're-pip', isComplex(c) ? c : '');
+  const p = h('span', 're-pip', c);
   p.style.setProperty('--pc', COLOR_HEX[c]);
   p.title = COLOR_NAME[c];
   return p;
 }
 
 function nodeHeight(def: RuneDef): number {
-  return HEAD + Math.max(def.inputs.length, def.outputs.length, 1) * ROW + 8;
+  return Math.max(BODY_H, SOCK0 + Math.max(def.inputs.length, def.outputs.length, 1) * ROW + 6);
 }
-const sockY = (i: number): number => HEAD + i * ROW + ROW / 2;
+const sockY = (i: number): number => SOCK0 + i * ROW + ROW / 2;
 
+const STAT_LABEL: Record<string, string> = {
+  damage: 'damage', speed: 'speed', aoeRadius: 'AoE radius', count: 'projectiles', spreadDeg: 'spread',
+  pierce: 'pierce', homing: 'homing', chain: 'chain', statusPotency: 'status power',
+  statusDuration: 'status duration', castTime: 'cast time', manaCost: 'mana cost',
+};
+function modText(m: Modifier): string {
+  const label = `${m.element ? `${m.element} ` : ''}${STAT_LABEL[m.stat] ?? m.stat}`;
+  const sign = (n: number): string => (n >= 0 ? '+' : '-');
+  if (m.op === 'increased') return `${sign(m.value)}${fmt(Math.abs(Math.round(m.value * 100)))}% ${label}`;
+  if (m.op === 'more') return `x${fmt(Math.round((1 + m.value) * 100) / 100)} ${label}`;
+  return `${sign(m.value)}${fmt(Math.abs(m.value))} ${label}`;
+}
+/** One-line effect summary for a rune card. */
+function summarize(def: RuneDef): string {
+  const parts: string[] = [];
+  if (def.shot) {
+    const s = def.shot;
+    parts.push(`${fmt(s.damage)} ${s.element}${s.count > 1 ? ` x${s.count}` : ''}`);
+    if (s.aoeRadius > 0) parts.push('AoE');
+    if (s.pierce > 0) parts.push('pierce');
+    if (s.chain > 0) parts.push('chain');
+    if (s.homing > 0) parts.push('homing');
+    for (const st of s.statuses) parts.push(st.kind);
+  }
+  for (const m of def.augments ?? []) parts.push(modText(m));
+  for (const m of def.globals ?? []) parts.push(`all: ${modText(m)}`);
+  if (parts.length === 0) return def.outputs.length ? 'Splits / routes magic' : def.description.split(/[.\n]/)[0];
+  return parts.slice(0, 3).join(' \u00B7 ');
+}
 function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
@@ -132,7 +165,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   }
 
   function makeSocket(cls: string, color: Color, x: number, y: number): HTMLElement {
-    const s = h('div', `re-sock ${cls}`, isComplex(color) ? color : '');
+    const s = h('div', `re-sock ${cls}${isComplex(color) ? ' complex' : ''}`, color);
     s.style.setProperty('--sc', COLOR_HEX[color]);
     s.style.left = `${x}px`;
     s.style.top = `${y}px`;
@@ -154,7 +187,17 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     card.style.height = `${nodeHeight(def)}px`;
     card.style.setProperty('--rc', cardAccent(def));
     card.appendChild(h('div', 're-name', def.name));
-    card.appendChild(h('div', 're-meta', `${def.mana} mana · ${fmt(def.castTime)}s`));
+    const sum = h('div', 're-sum', summarize(def));
+    sum.title = summarize(def);
+    card.appendChild(sum);
+    const meta = h('div', 're-meta');
+    const mc = h('span', 're-chip re-chip-mana', `\u25C6 ${fmt(def.mana)}`);
+    mc.title = `${fmt(def.mana)} mana`;
+    const tc = h('span', 're-chip re-chip-time', `\u25F7 ${def.castTime > 0 ? '+' : ''}${fmt(def.castTime)}s`);
+    tc.title = `${fmt(def.castTime)}s cast time`;
+    meta.append(mc, tc);
+    card.appendChild(meta);
+    if (ghost) card.appendChild(h('div', 're-place', 'Click to place'));
     def.inputs.forEach((c, i) => {
       const filled = !ghost && linkedIn?.has(i);
       card.appendChild(makeSocket(filled ? '' : 'empty-in', c, 0, sockY(i)));
@@ -205,7 +248,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       }
       if (!infoMsg) {
         if (placements.length === 0) {
-          infoMsg = { text: `No open outputs match ${selDef.inputs.map((c) => COLOR_NAME[c]).join(' + ')}`, kind: 'warn' };
+          infoMsg = {
+            text: `No open outputs match ${selDef.inputs.map((c) => COLOR_NAME[c]).join(' + ')}. Right-click a placed rune (or hover it and click \u00D7) to free its output.`,
+            kind: 'warn',
+          };
         } else if (placements.length > MAX_GHOSTS) {
           extraGhosts = placements.length - MAX_GHOSTS;
           infoMsg = { text: `Showing ${MAX_GHOSTS} of ${placements.length} placements; free up or fill outputs to narrow them.`, kind: 'info' };
@@ -242,7 +288,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       }
     }
     const worldW = colX(maxLevel + 1) - COL_GAP + PAD_X;
-    const worldH = Math.max(420, ...colY.map((v) => v ?? 0)) + PAD_Y;
+    const worldH = Math.max(280, ...colY.map((v) => v ?? 0)) + PAD_Y - ROW_GAP;
 
     const world = h('div', 're-world');
     world.style.width = `${worldW}px`;
@@ -256,6 +302,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     for (let lv = 0; lv <= maxLevel; lv++) {
       const lab = h('div', 're-col-label', `Level ${lv}`);
       lab.style.left = `${colX(lv)}px`;
+      lab.style.width = `${CARD_W}px`;
       world.appendChild(lab);
     }
 
@@ -306,6 +353,14 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       if (isRoot) card.classList.add('root');
       if (selectedNode === n.uid) card.classList.add('selected');
       attachTip(card, p.def);
+      if (!isRoot) {
+        const x = h('button', 're-x', '\u00D7');
+        x.title = 'Remove this rune (and anything that depends on it)';
+        x.setAttribute('aria-label', `Remove ${p.def.name}`);
+        x.addEventListener('mouseenter', hideTip);
+        x.addEventListener('click', (e) => { e.stopPropagation(); removeNode(n.uid); });
+        card.appendChild(x);
+      }
       card.addEventListener('click', (e) => {
         e.stopPropagation();
         selectedInv = null;
@@ -348,7 +403,18 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     canvas.replaceChildren();
     if (infoMsg) canvas.appendChild(h('div', `re-notice ${infoMsg.kind}`, infoMsg.text));
     canvas.appendChild(world);
-    canvas.appendChild(h('div', 're-hint', 'Click a rune in the inventory to place it · right-click a placed rune to remove'));
+    const hint = h('div', 're-hint');
+    const hintItems: [string, string][] = [
+      ['Place', 'click a rune in the inventory, then a ghost slot'],
+      ['Remove', 'right-click a placed rune or hit its \u00D7'],
+      ['Cancel', 'Esc'],
+    ];
+    for (const [k, v] of hintItems) {
+      const it = h('span', 're-hint-item');
+      it.append(h('b', undefined, k), document.createTextNode(` ${v}`));
+      hint.appendChild(it);
+    }
+    canvas.appendChild(hint);
     canvas.scrollLeft = prevL;
     canvas.scrollTop = prevT;
 
@@ -386,7 +452,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const over = v.manaUsed > opts.maxMana;
     const mrow = h('div', 're-stat-row');
     mrow.appendChild(h('span', undefined, 'Mana'));
-    mrow.appendChild(h('span', over ? 're-bad' : '', `${fmt(v.manaUsed)} / ${fmt(opts.maxMana)}`));
+    mrow.appendChild(h('span', over ? 're-bad' : 're-val', `${fmt(v.manaUsed)} / ${fmt(opts.maxMana)}${over ? ' \u2014 over budget' : ''}`));
     sbox.appendChild(mrow);
     const bar = h('div', `re-bar${over ? ' over' : ''}`);
     const fill = h('div');
@@ -398,7 +464,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     try { plan = compileSpell(graph, catalog); } catch { plan = null; }
     const crow = h('div', 're-stat-row');
     crow.appendChild(h('span', undefined, 'Cast time'));
-    crow.appendChild(h('span', undefined, `${fmt(plan ? plan.castTime : v.castTime)}s`));
+    crow.appendChild(h('span', 're-val', `${fmt(plan ? plan.castTime : v.castTime)}s`));
     sbox.appendChild(crow);
 
     if (v.errors.length) {
@@ -419,8 +485,11 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
         dot.style.setProperty('--dc', COLOR_HEX[ELEMENT_COLOR[s.element]]);
         const body = h('div');
         const title = h('div');
+        title.className = 're-shot-title';
         title.appendChild(h('b', undefined, `${i + 1}. ${s.runeName}`));
-        title.appendChild(document.createTextNode(` — ${fmt(Math.round(s.damage * 10) / 10)} ${s.element}${s.count > 1 ? ` ×${s.count}` : ''}`));
+        const dmg = h('span', 're-dmg', `${fmt(Math.round(s.damage * 10) / 10)} ${s.element}${s.count > 1 ? ` \u00D7${s.count}` : ''}`);
+        dmg.style.setProperty('--dc', COLOR_HEX[ELEMENT_COLOR[s.element]]);
+        title.appendChild(dmg);
         body.appendChild(title);
         const tags: string[] = [];
         if (s.aoeRadius > 0) tags.push(`AoE ${fmt(s.aoeRadius)}`);
@@ -446,7 +515,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const invWrap = h('div');
     invWrap.appendChild(h('h3', undefined, `Inventory (${inv.length})`));
     if (inv.length === 0) {
-      invWrap.appendChild(h('div', 're-muted', 'All owned runes are in the spell.'));
+      invWrap.appendChild(h('div', 're-muted', 'All owned runes are in the spell. Win floors to earn more.'));
     }
     const sortKey = (o: RuneInstance): string => {
       const d = defOf(o)!;
@@ -465,14 +534,21 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       for (const o of list) {
         const d = defOf(o)!;
         const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}`);
+        card.style.setProperty('--rar', RARITY_COLOR[d.rarity] ?? RARITY_COLOR.common);
         card.appendChild(h('div', 'n', d.name));
+        card.appendChild(h('div', 's', summarize(d)));
         const pips = h('div', 're-pips');
+        pips.appendChild(h('span', 're-io', 'In'));
         d.inputs.forEach((c) => pips.appendChild(pip(c)));
-        pips.appendChild(h('span', 're-arrow', '→'));
-        if (d.outputs.length === 0) pips.appendChild(h('span', 're-arrow', '●'));
+        pips.appendChild(h('span', 're-io', 'Out'));
+        if (d.outputs.length === 0) pips.appendChild(h('span', 're-arrow', '\u25CF'));
         d.outputs.forEach((c) => pips.appendChild(pip(c)));
         card.appendChild(pips);
-        card.appendChild(h('div', 'm', `${d.mana} mana · ${fmt(d.castTime)}s`));
+        const foot = h('div', 'm');
+        foot.appendChild(h('span', 're-chip re-chip-mana', `\u25C6 ${fmt(d.mana)}`));
+        foot.appendChild(h('span', 're-rar', d.rarity));
+        card.appendChild(foot);
+        if (selectedInv === o.uid) card.appendChild(h('div', 're-sel-badge', 'Selected'));
         attachTip(card, d);
         card.addEventListener('click', (e) => {
           e.stopPropagation();

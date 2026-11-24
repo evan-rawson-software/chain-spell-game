@@ -77,6 +77,9 @@ export type MountEditor = (container: HTMLElement, opts: EditorOptions) => Edito
 
 export interface BattleOptions {
   plan: CastPlan;
+  /** The spell the plan was compiled from, shown as a live strip during combat. */
+  graph: SpellGraph;
+  catalog: RuneCatalog;
   floor: FloorDef;
   wizardMaxHp: number;
   onEnd(result: BattleResult): void;

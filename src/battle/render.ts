@@ -8,7 +8,7 @@ export interface HudState {
   floor: FloorDef;
   waveIdx: number;
   waveTotal: number;
-  banner: string | null;
+  banner: { title: string; sub: string; alpha: number } | null;
   overlay: { text: string; good: boolean } | null;
   charge: number;
   castTime: number;
@@ -16,6 +16,13 @@ export interface HudState {
   mouse: { x: number; y: number; inside: boolean };
   orbColor: string;
   time: number;
+  /** HUD text/bar scale compensation (>=1) */
+  ui: number;
+  /** 0..1 damage vignette strength */
+  hurt: number;
+  /** world-x of the left edge and width of the visible area (letterbox included) */
+  offX: number;
+  viewW: number;
 }
 
 const stars = Array.from({ length: 70 }, () => ({ x: Math.random() * W, y: Math.random() * H * 0.9, r: Math.random() * 1.4 + 0.3, p: Math.random() * 6 }));
@@ -263,48 +270,88 @@ function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number
 }
 
 function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
+  const u = h.ui;
   // wizard HP
-  bar(ctx, 20, 20, 240, 18, w.wizHp / w.wizMax, '#d94452');
-  label(ctx, `HP ${Math.ceil(w.wizHp)} / ${w.wizMax}`, 140, 34, 13, 'center');
-  // charge
+  const hpW = 240 * u, hpH = 20 * u;
+  bar(ctx, 20, 16, hpW, hpH, w.wizHp / w.wizMax, '#d94452');
+  label(ctx, `HP ${Math.ceil(w.wizHp)} / ${w.wizMax}`, 20 + hpW / 2, 16 + hpH * 0.78, 14 * u, 'center');
+  // charge (the spell strip below shows detail)
   const frac = h.hasShots ? h.charge / h.castTime : 0;
   const ready = h.hasShots && h.charge >= h.castTime;
-  bar(ctx, 20, 46, 240, 12, frac, ready ? '#ffe27a' : '#6aa8ff');
-  label(ctx, h.hasShots ? (ready ? 'READY' : `Charging ${Math.max(0, h.castTime - h.charge).toFixed(1)}s`) : '', 140, 56, 10, 'center', '#10121c');
-  label(ctx, `Cast time ${h.castTime.toFixed(2)}s`, 20, 74, 11, 'left', '#b8bdd8');
+  const cy = 16 + hpH + 6;
+  const pulse = 0.5 + 0.5 * Math.sin(h.time * 7);
+  if (ready) { ctx.save(); ctx.shadowColor = '#ffe27a'; ctx.shadowBlur = (8 + 10 * pulse) * u; }
+  bar(ctx, 20, cy, hpW, 10 * u, frac, ready ? '#ffe27a' : '#6aa8ff');
+  if (ready) ctx.restore();
+  if (h.hasShots) {
+    label(ctx, ready ? 'READY' : `Charging ${Math.max(0, h.castTime - h.charge).toFixed(1)}s`, 20 + hpW + 10, cy + 10 * u, 13 * u, 'left', ready ? '#ffe27a' : '#b8c8ff');
+  }
 
   // floor info
   const kind = h.floor.kind === 'normal' ? '' : ' - ' + (h.floor.kind === 'elite' ? 'Elite' : 'Boss');
-  label(ctx, `Floor ${h.floor.floor}${kind}`, W / 2, 28, 16, 'center');
-  label(ctx, `Wave ${Math.min(h.waveIdx + 1, h.waveTotal)}/${h.waveTotal}`, W - 20, 28, 16, 'right');
+  label(ctx, `Floor ${h.floor.floor}${kind}`, W / 2, 28 * u, 16 * u, 'center');
+  label(ctx, `Wave ${Math.min(h.waveIdx + 1, h.waveTotal)}/${h.waveTotal}`, W - 20, 28 * u, 16 * u, 'right');
 
   // boss bar
   const boss = w.enemies.find(e => e.kind === 'boss_lich' && !e.dead);
   if (boss) {
-    bar(ctx, W / 2 - 220, 40, 440, 16, boss.hp / boss.maxHp, '#8b3ad8');
-    label(ctx, `${boss.cfg.name}  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, W / 2, 53, 12, 'center');
+    const by = 40 * u;
+    bar(ctx, W / 2 - 220, by, 440, 16 * u, boss.hp / boss.maxHp, '#8b3ad8');
+    label(ctx, `${boss.cfg.name}  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, W / 2, by + 13 * u, 12 * u, 'center');
   }
 
-  if (!h.hasShots) label(ctx, 'Spell has no damaging runes', W / 2, H - 30, 18, 'center', '#ffb86b');
-  else if (h.time < 6) label(ctx, 'Click or hold to cast toward the cursor', W / 2, H - 24, 14, 'center', '#9aa0c8');
+  // off-screen enemy markers on the right edge
+  ctx.fillStyle = 'rgba(255,90,90,0.85)';
+  for (const e of w.enemies) {
+    if (e.dead || e.x - e.r < W) continue;
+    const y = Math.max(20, Math.min(H - 20, e.y));
+    ctx.beginPath(); ctx.moveTo(W - 4, y); ctx.lineTo(W - 16, y - 8); ctx.lineTo(W - 16, y + 8); ctx.closePath(); ctx.fill();
+  }
 
-  // crosshair
+  if (!h.hasShots) label(ctx, 'Spell has no damaging runes', W / 2, H - 34, 18 * u, 'center', '#ffb86b');
+  else if (h.time < 6) label(ctx, 'Click or hold to cast toward the cursor', W / 2, H - 12, 14 * u, 'center', '#c4c9ee');
+
+  // aim line + crosshair
   if (h.mouse.inside && !h.overlay) {
     const { x, y } = h.mouse;
-    ctx.strokeStyle = ready ? 'rgba(255,226,122,0.9)' : 'rgba(200,210,255,0.5)';
+    ctx.save();
+    ctx.setLineDash([6, 8]);
+    ctx.strokeStyle = ready ? 'rgba(255,226,122,0.35)' : 'rgba(200,210,255,0.2)';
     ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
-    ctx.moveTo(x - 15, y); ctx.lineTo(x - 5, y); ctx.moveTo(x + 5, y); ctx.lineTo(x + 15, y);
-    ctx.moveTo(x, y - 15); ctx.lineTo(x, y - 5); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 15);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(MUZZLE_X, MUZZLE_Y); ctx.lineTo(x, y); ctx.stroke();
+    ctx.restore();
+    const col = ready ? '#ffe27a' : '#e6ebff';
+    const reticle = (): void => {
+      ctx.beginPath(); ctx.arc(x, y, 10 * u, 0, Math.PI * 2);
+      ctx.moveTo(x - 18 * u, y); ctx.lineTo(x - 6 * u, y); ctx.moveTo(x + 6 * u, y); ctx.lineTo(x + 18 * u, y);
+      ctx.moveTo(x, y - 18 * u); ctx.lineTo(x, y - 6 * u); ctx.moveTo(x, y + 6 * u); ctx.lineTo(x, y + 18 * u);
+      ctx.stroke();
+    };
+    ctx.lineWidth = 4.5; ctx.strokeStyle = 'rgba(0,0,0,0.7)'; reticle();
+    ctx.lineWidth = 2; ctx.strokeStyle = col; reticle();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 1.8 * u, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // damage vignette (covers the full visible width)
+  if (h.hurt > 0) {
+    const cx = h.offX + h.viewW / 2, cy2 = H / 2;
+    const g = ctx.createRadialGradient(cx, cy2, Math.min(h.viewW, W) * 0.3, cx, cy2, Math.max(h.viewW, W) * 0.62);
+    g.addColorStop(0, 'rgba(220,20,30,0)');
+    g.addColorStop(1, `rgba(220,20,30,${0.55 * h.hurt})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(h.offX, 0, h.viewW, H);
   }
 
   if (h.banner && !h.overlay) {
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 230, W, 80);
-    label(ctx, h.banner, W / 2, 285, 44, 'center', '#fff3c4');
+    ctx.save();
+    ctx.globalAlpha = h.banner.alpha;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(h.offX, 215, h.viewW, 100);
+    label(ctx, h.banner.title, W / 2, 275, 48, 'center', '#fff3c4');
+    label(ctx, h.banner.sub, W / 2, 304, 18, 'center', '#c8cdf0');
+    ctx.restore();
   }
   if (h.overlay) {
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(h.offX, 0, h.viewW, H);
     label(ctx, h.overlay.text, W / 2, H / 2 + 14, 54, 'center', h.overlay.good ? '#ffe27a' : '#ff6b6b');
   }
 }

@@ -4,12 +4,13 @@ import { spawnEnemy, sweepDead, updateEnemies, updateEnemyProjectiles } from './
 import { ELEMENT_COLOR, H, W, newWorld, updateFx } from './model';
 import { fireShot, updatePlayerProjectiles } from './projectiles';
 import { render, type HudState } from './render';
+import { createSpellStrip } from './spellstrip';
 
 
 type Phase = 'delay' | 'fight' | 'ending';
 
 export function createGame(container: HTMLElement, opts: BattleOptions): BattleHandle {
-  const { plan, floor, wizardMaxHp, onEnd } = opts;
+  const { plan, floor, wizardMaxHp, onEnd, graph, catalog } = opts;
   const canvas = document.createElement('canvas');
   canvas.className = 'battle-canvas';
   container.classList.add('battle-root');
@@ -23,16 +24,26 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   const orbColor = hasShots ? ELEMENT_COLOR[plan.shots[0].element] : '#9aa0c8';
 
   // layout
+  const strip = createSpellStrip(graph, catalog, plan);
+  const flashes = new Map<string, number>();
   let cssW = 1, cssH = 1, dpr = 1, scale = 1, offX = 0, offY = 0;
+  let stripX = 0, stripY = 0, stripW = 1, stripH = 1;
   function resize(): void {
     cssW = Math.max(1, container.clientWidth);
     cssH = Math.max(1, container.clientHeight);
     dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
-    scale = Math.min(cssW / W, cssH / H);
+    // reserve a band at the bottom for the spell strip (render transform only; world stays W x H)
+    stripH = Math.max(84, Math.min(130, cssH * 0.16));
+    const playH = Math.max(1, cssH - stripH - 8);
+    scale = Math.min(cssW / W, playH / H);
     offX = (cssW - W * scale) / 2;
-    offY = (cssH - H * scale) / 2;
+    offY = (playH - H * scale) / 2;
+    stripW = Math.min(cssW - 16, 1100);
+    stripX = (cssW - stripW) / 2;
+    stripY = cssH - stripH - 6;
+    strip.layout(ctx, stripW, stripH);
   }
   resize();
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
@@ -73,6 +84,10 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   let waveT = 0;
   let queue: { t: number; kind: EnemyKind }[] = [];
   let charge = 0;
+  let hurtT = 0;
+  let prevHp = world.wizHp;
+  let bannerT = 0;
+  const BANNER_DUR = 1.5;
   const casts: { i: number; t: number }[] = [];
   let endT = 0;
   let won = false;
@@ -91,6 +106,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     queue.sort((a, b) => a.t - b.t);
     waveT = 0;
     phase = 'fight';
+    bannerT = BANNER_DUR;
   }
 
   function finish(victory: boolean): void {
@@ -104,6 +120,10 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   function update(dt: number): void {
     world.time += dt;
     world.wizFlash = Math.max(0, world.wizFlash - dt);
+    hurtT = Math.max(0, hurtT - dt);
+    bannerT = Math.max(0, bannerT - dt);
+    if (world.wizHp < prevHp) hurtT = 0.5;
+    prevHp = world.wizHp;
     if (phase !== 'ending') elapsed += dt;
     wantFire = Math.max(0, wantFire - dt);
 
@@ -129,6 +149,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       c.t -= dt;
       while (c.t <= 0 && c.i < plan.shots.length) {
         fireShot(world, plan.shots[c.i], mouse.x, mouse.y);
+        flashes.set(plan.shots[c.i].sourceUid, world.time);
         c.i++;
         c.t += stagger;
       }
@@ -169,16 +190,38 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * offX, dpr * offY);
     ctx.save();
-    ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.clip();
+    // clip vertically to the world; sideways overflow stays visible so entering enemies show
+    ctx.beginPath(); ctx.rect(-offX / scale, 0, cssW / scale, H); ctx.clip();
     const total = floor.waves.length;
+    const kindName = floor.kind === 'elite' ? 'Elite' : floor.kind === 'boss' ? 'Boss' : '';
+    const bk = bannerT / BANNER_DUR;
+    const bAlpha = bannerT <= 0 ? 0 : Math.max(0, Math.min(1, (1 - bk) / 0.2, bk / 0.3));
     const hud: HudState = {
       floor, waveIdx, waveTotal: total,
-      banner: phase === 'delay' && waveIdx < total ? `Wave ${waveIdx + 1}/${total}` : null,
+      banner: bAlpha > 0 ? {
+        title: `Wave ${Math.min(waveIdx + 1, total)}`,
+        sub: kindName ? `Floor ${floor.floor} — ${kindName}` : `Floor ${floor.floor}`,
+        alpha: bAlpha,
+      } : null,
       overlay: phase === 'ending' ? { text: won ? 'Floor cleared' : 'The wizard has fallen', good: won } : null,
       charge, castTime, hasShots, mouse, orbColor, time: world.time,
+      ui: Math.max(1, Math.min(1.7, 1 / scale)),
+      hurt: Math.min(1, hurtT / 0.5),
+      offX: -offX / scale, viewW: cssW / scale,
     };
     render(ctx, world, hud);
     ctx.restore();
+
+    // spell strip in screen space
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    strip.draw(ctx, stripX, stripY, {
+      progress: castTime > 0 ? charge / castTime : 0,
+      ready: charge >= castTime,
+      hasShots,
+      remaining: castTime - charge,
+      time: world.time,
+      flashes,
+    });
   }
 
   function frame(now: number): void {
