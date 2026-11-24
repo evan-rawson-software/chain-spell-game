@@ -14,7 +14,7 @@ describe('rune catalog', () => {
 
   it('input/output counts', () => {
     for (const d of defs) {
-      expect(d.outputs.length).toBeLessThanOrEqual(2);
+      expect(d.outputs.length).toBeLessThanOrEqual(3);
       if (d.id !== SOURCE_ID) expect(d.inputs.length).toBeGreaterThanOrEqual(1);
       expect(d.mana).toBeGreaterThanOrEqual(0);
       expect(d.mana).toBeLessThanOrEqual(4);
@@ -57,8 +57,8 @@ describe('rune catalog', () => {
     }
   });
 
-  it('outputs are at most 2 and complex colors have producers and consumers', () => {
-    for (const d of defs) expect(d.outputs.length, d.id).toBeLessThanOrEqual(2);
+  it('outputs are at most 3 and complex colors have producers and consumers', () => {
+    for (const d of defs) expect(d.outputs.length, d.id).toBeLessThanOrEqual(3);
     for (const c of ['Y', 'P', 'T', 'W'] as Color[]) {
       expect(defs.some((d) => d.outputs.includes(c)), `${c} producer`).toBe(true);
       expect(defs.some((d) => d.inputs.includes(c)), `${c} consumer`).toBe(true);

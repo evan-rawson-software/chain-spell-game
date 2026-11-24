@@ -95,7 +95,7 @@ export interface RuneDef {
   rarity: Rarity;
   /** At least 1, except the Source rune (0). Terminals may have several. */
   inputs: Color[];
-  /** 0..2 */
+  /** 0..3 */
   outputs: Color[];
   mana: number;
   /** seconds added to the spell's cast time (may be negative) */

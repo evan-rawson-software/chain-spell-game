@@ -28,13 +28,13 @@ type Def = Omit<RuneDef, 'id'>;
 const defs: Record<string, Def> = {
   // ------------------------------------------------------------ Source & starters
   [SOURCE_ID]: {
-    name: 'Source', rarity: 'starter', inputs: [], outputs: ['R', 'B'], mana: 0, castTime: 0.5,
-    description: 'The wellspring of every spell. Emits Red and Blue. Sets the base cast time.',
+    name: 'Source', rarity: 'starter', inputs: [], outputs: ['R', 'B', 'G'], mana: 0, castTime: 0.5,
+    description: 'The wellspring of every spell. Emits Red, Blue and Green. Sets the base cast time.',
   },
   amplify: {
-    name: 'Amplify', rarity: 'starter', inputs: ['R'], outputs: ['R'], mana: 2, castTime: 0.1,
+    name: 'Amplify', rarity: 'starter', inputs: ['R'], outputs: ['R', 'R'], mana: 2, castTime: 0.1,
     augments: [inc('damage', 0.3)],
-    description: 'Passes Red along and boosts damage of everything beyond it by 30%.',
+    description: 'Splits Red into two Red streams. Shots beyond it deal 30% more damage.',
   },
   fireball: {
     name: 'Fireball', rarity: 'starter', inputs: ['R'], outputs: [], mana: 2, castTime: 0.2,
@@ -64,51 +64,51 @@ const defs: Record<string, Def> = {
     description: 'A barbed thorn: 14 nature damage and a stacking poison (4 dps per stack, 4s).',
   },
   prism_fork: {
-    name: 'Prism Fork', rarity: 'common', inputs: ['R'], outputs: ['R', 'B'], mana: 1, castTime: 0.1,
+    name: 'Prism Fork', rarity: 'common', inputs: ['R'], outputs: ['R', 'G', 'B'], mana: 2, castTime: 0.1,
     augments: [inc('speed', 0.2), flat('damage', 4)],
-    description: 'Splits one Red stream into a Red and a Blue stream. Shots beyond it fly 20% faster and deal +4 damage.',
+    description: 'Turns Red into Red, Green and Blue streams. Shots beyond it fly 20% faster and deal +4 damage.',
   },
   bloom: {
-    name: 'Bloom', rarity: 'common', inputs: ['G'], outputs: ['G', 'G'], mana: 2, castTime: 0.1,
+    name: 'Bloom', rarity: 'common', inputs: ['G'], outputs: ['G', 'G', 'G'], mana: 3, castTime: 0.1,
     augments: [inc('statusDuration', 0.3)],
-    description: 'Splits one Green stream into two Green streams. Status effects beyond it last 30% longer.',
+    description: 'Splits Green into three Green streams. Status effects beyond it last 30% longer.',
   },
   verdigris: {
-    name: 'Verdigris', rarity: 'common', inputs: ['B'], outputs: ['G'], mana: 1, castTime: 0.05,
+    name: 'Verdigris', rarity: 'common', inputs: ['B'], outputs: ['G', 'T'], mana: 2, castTime: 0.05,
     augments: [inc('statusPotency', 0.25)],
-    description: 'Converts a Blue stream into Green. Status effects beyond it are 25% more potent.',
+    description: 'Turns Blue into Green and Teal streams. Status effects beyond it are 25% more potent.',
   },
   kindle: {
-    name: 'Kindle', rarity: 'common', inputs: ['B'], outputs: ['R'], mana: 1, castTime: 0.05,
+    name: 'Kindle', rarity: 'common', inputs: ['B'], outputs: ['R', 'R'], mana: 2, castTime: 0.05,
     augments: [flat('damage', 5)],
-    description: 'Converts a Blue stream into Red. Shots beyond it deal +5 damage.',
+    description: 'Turns Blue into two Red streams. Shots beyond it deal +5 damage.',
   },
   ember_focus: {
-    name: 'Ember Focus', rarity: 'common', inputs: ['R'], outputs: ['R'], mana: 1, castTime: 0.1,
+    name: 'Ember Focus', rarity: 'common', inputs: ['R'], outputs: ['R', 'R'], mana: 2, castTime: 0.1,
     augments: [inc('damage', 0.4, 'fire')],
-    description: 'Passes Red along. Fire shots beyond it deal 40% more (increased) damage.',
+    description: 'Splits Red into two Red streams. Fire shots beyond it deal 40% more (increased) damage.',
   },
   frost_focus: {
-    name: 'Frost Focus', rarity: 'common', inputs: ['B'], outputs: ['B'], mana: 1, castTime: 0.1,
+    name: 'Frost Focus', rarity: 'common', inputs: ['B'], outputs: ['B', 'B'], mana: 2, castTime: 0.1,
     augments: [inc('damage', 0.4, 'frost')],
-    description: 'Passes Blue along. Frost shots beyond it deal 40% more (increased) damage.',
+    description: 'Splits Blue into two Blue streams. Frost shots beyond it deal 40% more (increased) damage.',
   },
   kindling: {
-    name: 'Kindling', rarity: 'common', inputs: ['R'], outputs: ['R'], mana: 1, castTime: 0.1,
+    name: 'Kindling', rarity: 'common', inputs: ['R'], outputs: ['R', 'B'], mana: 2, castTime: 0.1,
     augments: [flat('damage', 8)],
-    description: 'Passes Red along and adds 8 flat damage to every shot beyond it.',
+    description: 'Turns Red into Red and Blue streams. Shots beyond it deal +8 damage.',
   },
   thrift: {
-    name: 'Thrift', rarity: 'common', inputs: ['B'], outputs: ['B'], mana: 1, castTime: 0.05,
+    name: 'Thrift', rarity: 'common', inputs: ['B'], outputs: ['B', 'G'], mana: 2, castTime: 0.05,
     augments: [flat('manaCost', -1)],
-    description: 'Passes Blue along. Runes beyond it cost 1 less mana.',
+    description: 'Turns Blue into Blue and Green streams. Runes beyond it cost 1 less mana.',
   },
 
   // ------------------------------------------------------------ Uncommon
   split: {
-    name: 'Split', rarity: 'uncommon', inputs: ['R'], outputs: ['R', 'R'], mana: 3, castTime: 0.15,
+    name: 'Split', rarity: 'uncommon', inputs: ['R'], outputs: ['R', 'R', 'R'], mana: 3, castTime: 0.15,
     augments: [flat('count', 2), flat('spreadDeg', 20), more('damage', -0.25)],
-    description: 'Splits one Red stream into two Red streams. Shots beyond it fire 2 extra projectiles in a fan, each 25% weaker.',
+    description: 'Splits Red into three Red streams. Shots beyond it fire 2 extra projectiles in a fan, each 25% weaker.',
   },
   pierce: {
     name: 'Pierce', rarity: 'uncommon', inputs: ['B'], outputs: ['B', 'B'], mana: 3, castTime: 0.1,
@@ -131,14 +131,14 @@ const defs: Record<string, Def> = {
     description: 'Splits one Yellow stream into two Yellow streams. Shots beyond it jump to 2 more nearby enemies.',
   },
   quicken: {
-    name: 'Quicken', rarity: 'uncommon', inputs: ['R'], outputs: ['R'], mana: 2, castTime: -0.1,
+    name: 'Quicken', rarity: 'uncommon', inputs: ['R'], outputs: ['R', 'B'], mana: 2, castTime: -0.1,
     augments: [inc('castTime', -0.25), inc('damage', -0.15)],
-    description: 'Passes Red along. Spell cast time -25%, but shots beyond it deal 15% less damage.',
+    description: 'Turns Red into Red and Blue streams. Spell cast time -25%, but shots beyond it deal 15% less damage.',
   },
   overload: {
-    name: 'Overload', rarity: 'uncommon', inputs: ['R'], outputs: ['R'], mana: 3, castTime: 0.1,
+    name: 'Overload', rarity: 'uncommon', inputs: ['R'], outputs: ['R', 'R'], mana: 3, castTime: 0.1,
     augments: [inc('damage', 0.5), flat('castTime', 0.4)],
-    description: 'Passes Red along. Shots beyond it deal 50% more damage, but the cast takes 0.4s longer.',
+    description: 'Splits Red into two Red streams. Shots beyond it deal 50% more damage, but the cast takes 0.4s longer.',
   },
   virulence: {
     name: 'Virulence', rarity: 'uncommon', inputs: ['G'], outputs: ['G', 'T'], mana: 3, castTime: 0.1,
@@ -183,9 +183,9 @@ const defs: Record<string, Def> = {
 
   // ------------------------------------------------------------ Rare
   empower: {
-    name: 'Empower', rarity: 'rare', inputs: ['R'], outputs: ['R'], mana: 3, castTime: 0.15,
+    name: 'Empower', rarity: 'rare', inputs: ['R'], outputs: ['R', 'P'], mana: 4, castTime: 0.15,
     augments: [more('damage', 0.5)],
-    description: 'Passes Red along. Shots beyond it deal x1.5 damage (multiplies after all other bonuses).',
+    description: 'Turns Red into Red and Purple streams. Shots beyond it deal x1.5 damage (multiplies after all other bonuses).',
   },
   chromatic_lens: {
     name: 'Chromatic Lens', rarity: 'rare', inputs: ['R'], outputs: ['Y', 'P'], mana: 3, castTime: 0.15,
@@ -220,14 +220,14 @@ const defs: Record<string, Def> = {
 
   // ------------------------------------------------------------ New: common
   spectral_split: {
-    name: 'Spectral Split', rarity: 'common', inputs: ['G'], outputs: ['R', 'B'], mana: 2, castTime: 0.1,
+    name: 'Spectral Split', rarity: 'common', inputs: ['G'], outputs: ['R', 'G', 'B'], mana: 3, castTime: 0.1,
     augments: [inc('statusPotency', 0.15)],
-    description: 'Splits one Green stream into a Red and a Blue stream. Status effects beyond it are 15% more potent.',
+    description: 'Turns Green into Red, Green and Blue streams. Status effects beyond it are 15% more potent.',
   },
   teal_weave: {
-    name: 'Teal Weave', rarity: 'common', inputs: ['G', 'B'], outputs: ['T'], mana: 2, castTime: 0.1,
+    name: 'Teal Weave', rarity: 'common', inputs: ['G', 'B'], outputs: ['T', 'T'], mana: 2, castTime: 0.1,
     augments: [inc('statusDuration', 0.2)],
-    description: 'Weaves a Green and a Blue stream into one Teal stream. Status effects beyond it last 20% longer.',
+    description: 'Merges Green and Blue into two Teal streams. Status effects beyond it last 20% longer.',
   },
   poison_cloud: {
     name: 'Poison Cloud', rarity: 'common', inputs: ['G'], outputs: [], mana: 2, castTime: 0.25,
@@ -294,14 +294,14 @@ const defs: Record<string, Def> = {
 
   // ------------------------------------------------------------ New: rare
   prismatic_heart: {
-    name: 'Prismatic Heart', rarity: 'rare', inputs: ['R', 'G', 'B'], outputs: ['W'], mana: 4, castTime: 0.2,
+    name: 'Prismatic Heart', rarity: 'rare', inputs: ['R', 'G', 'B'], outputs: ['W', 'W'], mana: 4, castTime: 0.2,
     augments: [more('damage', 0.3)],
-    description: 'Fuses Red, Green and Blue into one White stream. Shots beyond it deal x1.3 damage.',
+    description: 'Merges Red, Green and Blue into two White streams. Shots beyond it deal x1.3 damage.',
   },
   prism_break: {
-    name: 'Prism Break', rarity: 'rare', inputs: ['W'], outputs: ['P', 'T'], mana: 4, castTime: 0.2,
+    name: 'Prism Break', rarity: 'rare', inputs: ['W'], outputs: ['P', 'T', 'Y'], mana: 4, castTime: 0.2,
     augments: [inc('damage', 0.2), inc('statusPotency', 0.2)],
-    description: 'Shatters a White stream into a Purple and a Teal stream. Shots beyond it deal 20% more damage and have 20% stronger statuses.',
+    description: 'Turns White into Purple, Teal and Yellow streams. Shots beyond it deal 20% more damage and have 20% stronger statuses.',
   },
   radiant_lance: {
     name: 'Radiant Lance', rarity: 'rare', inputs: ['W'], outputs: [], mana: 4, castTime: 0.45,

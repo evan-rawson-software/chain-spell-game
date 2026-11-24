@@ -15,7 +15,7 @@ Every rune has:
 | Property | Description |
 |---|---|
 | **Inputs** | ≥ 1 (except the Source rune). Each has a color and links to an open output on the previous level. Terminal runes may need more inputs than any single parent can supply (e.g. R + R + B), drawing on outputs from several parents. |
-| **Outputs** | 0–2, each colored. Open outputs are where later runes attach. |
+| **Outputs** | 0–3, each colored. Open outputs are where later runes attach. |
 | **Effect** | Terminal runes (0 outputs) have a **base effect**. Branching runes (≥ 1 output) have an **augment** applied to all descendants. |
 | **Mana cost** | Counts against the wizard's max mana (build budget). |
 | **Cast time** | Added to the spell's total cast time. |
@@ -40,7 +40,7 @@ Yellow = Lightning, Purple = Arcane, Teal = Storm, White = Pure.
 ### Structure
 
 - The **Source** rune is placed by default at level 0. It has no input. **[default]** The starter
-  Source has 2 outputs: Red + Blue.
+  Source has 3 outputs: Red + Blue + Green.
 - A rune's level = its parents' level + 1. Merging only happens across runes on the same level,
   so a merged rune's level is still well-defined.
 - **[default]** All of a rune's inputs must come from runes on one level, whether combined into a
@@ -93,7 +93,7 @@ When the spell is cast:
 | Damage + augments | Fireball (base 40), Amplify (+30% damage), Empower (×1.5 more) |
 | Elements & status | Burn (DoT), Slow/Freeze, Poison stacks, Chain lightning; enemy resistances/weaknesses |
 | Shape modifiers | Split into N projectiles, Pierce, AoE radius, Homing |
-| Branching | Many runes have two outputs (Split, Pierce, Prism Fork, Photosynth…); mergers combine primaries (Prism Merge R+B → P,P; Prismatic Heart R+G+B → W) |
+| Branching | Every routing rune has two or three outputs (Split, Pierce, Prism Fork, Photosynth…); mergers combine primaries (Prism Merge R+B → P,P; Prismatic Heart R+G+B → W) |
 | Cast-time / mana | Quicken (−cast time, −damage), Thrift (−mana cost), Overload (+damage, +cast time) |
 
 ## 5. Run structure
