@@ -65,19 +65,23 @@ const defs: Record<string, Def> = {
   },
   prism_fork: {
     name: 'Prism Fork', rarity: 'common', inputs: ['R'], outputs: ['R', 'B'], mana: 1, castTime: 0.1,
-    description: 'Splits one Red stream into a Red and a Blue stream.',
+    augments: [inc('speed', 0.2), flat('damage', 4)],
+    description: 'Splits one Red stream into a Red and a Blue stream. Shots beyond it fly 20% faster and deal +4 damage.',
   },
   bloom: {
     name: 'Bloom', rarity: 'common', inputs: ['G'], outputs: ['G', 'G'], mana: 2, castTime: 0.1,
-    description: 'Splits one Green stream into two Green streams.',
+    augments: [inc('statusDuration', 0.3)],
+    description: 'Splits one Green stream into two Green streams. Status effects beyond it last 30% longer.',
   },
   verdigris: {
     name: 'Verdigris', rarity: 'common', inputs: ['B'], outputs: ['G'], mana: 1, castTime: 0.05,
-    description: 'Converts a Blue stream into Green.',
+    augments: [inc('statusPotency', 0.25)],
+    description: 'Converts a Blue stream into Green. Status effects beyond it are 25% more potent.',
   },
   kindle: {
     name: 'Kindle', rarity: 'common', inputs: ['B'], outputs: ['R'], mana: 1, castTime: 0.05,
-    description: 'Converts a Blue stream into Red.',
+    augments: [flat('damage', 5)],
+    description: 'Converts a Blue stream into Red. Shots beyond it deal +5 damage.',
   },
   ember_focus: {
     name: 'Ember Focus', rarity: 'common', inputs: ['R'], outputs: ['R'], mana: 1, castTime: 0.1,
@@ -185,11 +189,13 @@ const defs: Record<string, Def> = {
   },
   chromatic_lens: {
     name: 'Chromatic Lens', rarity: 'rare', inputs: ['R'], outputs: ['Y', 'P'], mana: 3, castTime: 0.15,
-    description: 'Refracts a Red stream directly into a Yellow and a Purple stream.',
+    augments: [inc('damage', 0.2), flat('homing', 1.5)],
+    description: 'Refracts a Red stream into a Yellow and a Purple stream. Shots beyond it deal 20% more damage and gently home.',
   },
   storm_lens: {
     name: 'Storm Lens', rarity: 'rare', inputs: ['G'], outputs: ['T', 'Y'], mana: 3, castTime: 0.15,
-    description: 'Refracts a Green stream directly into a Teal and a Yellow stream.',
+    augments: [flat('chain', 1), inc('speed', 0.2)],
+    description: 'Refracts a Green stream into a Teal and a Yellow stream. Shots beyond it chain 1 extra time and fly 20% faster.',
   },
   meteor: {
     name: 'Meteor', rarity: 'rare', inputs: ['R', 'R', 'B'], outputs: [], mana: 4, castTime: 0.5,

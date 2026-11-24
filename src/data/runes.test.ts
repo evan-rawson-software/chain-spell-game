@@ -31,6 +31,7 @@ describe('rune catalog', () => {
       } else {
         expect(d.shot, d.id).toBeUndefined();
         expect(d.globals, d.id).toBeUndefined();
+        expect(d.augments?.length, `${d.id} should do more than route colors`).toBeGreaterThan(0);
       }
     }
   });
