@@ -5,9 +5,9 @@ export const H = 600;
 export const WIZ_X = 80;
 export const WIZ_Y = 300;
 export const WIZ_R = 30;
-/** Where projectiles leave the staff. */
-export const MUZZLE_X = 110;
-export const MUZZLE_Y = 268;
+/** Where projectiles leave: the center of the magic circle. */
+export const MUZZLE_X = WIZ_X;
+export const MUZZLE_Y = WIZ_Y;
 
 export interface StatusState {
   burn: { dps: number; t: number } | null;
