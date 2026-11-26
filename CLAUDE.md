@@ -31,6 +31,7 @@ TypeScript + Vite, no framework. Canvas 2D for battles, plain DOM + inline SVG f
 | `src/data/runes.ts` | Rune catalog (`CATALOG`), starter kit and graph, `runeTooltip` |
 | `src/editor/` | Rune editor UI: graph by level, placement previews, inventory, live spell stats |
 | `src/battle/` | Real-time arena: enemies, projectiles, statuses, waves, HUD; `dev.ts` has demo data |
+| `src/audio/` | Sound effects: `sfx(name)`, mute; clips in `public/sfx/` |
 | `src/run/` | Run state, floors, seeded rewards, localStorage save, screen flow (`startApp`) |
 | `src/main.ts` | Entry point: `startApp(#app)` |
 
@@ -59,7 +60,7 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
 - Stacking: `(base + flat) * (1 + sum(increased)) * product(1 + more)`.
 - Terminals fire depth-first, left-to-right, `stagger` seconds apart.
 - Mana is a static build budget that grows automatically per cleared floor (`manaGain` in
-  `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only (pick 2 of 5). Wizard HP resets
+  `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only (pick 2 of 5). Ward HP resets
   each floor.
 - No meta-progression in the MVP.
 

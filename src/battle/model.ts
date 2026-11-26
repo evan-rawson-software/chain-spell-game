@@ -2,12 +2,12 @@ import type { Element, EnemyKind, ResolvedShot, StatusKind } from '../types';
 
 export const W = 1000;
 export const H = 600;
-export const WIZ_X = 80;
-export const WIZ_Y = 300;
-export const WIZ_R = 30;
+export const WARD_X = 80;
+export const WARD_Y = 300;
+export const WARD_R = 30;
 /** Where projectiles leave: the center of the magic circle. */
-export const MUZZLE_X = WIZ_X;
-export const MUZZLE_Y = WIZ_Y;
+export const MUZZLE_X = WARD_X;
+export const MUZZLE_Y = WARD_Y;
 
 export interface StatusState {
   burn: { dps: number; t: number } | null;
@@ -87,9 +87,9 @@ export interface World {
   rings: Ring[];
   arcs: Arc[];
   texts: FloatText[];
-  wizHp: number;
-  wizMax: number;
-  wizFlash: number;
+  wardHp: number;
+  wardMax: number;
+  wardFlash: number;
   kills: number;
   damageTaken: number;
   nextId: number;
@@ -127,10 +127,10 @@ export const ENEMY_CFG: Record<EnemyKind, EnemyCfg> = {
   },
 };
 
-export function newWorld(wizMax: number): World {
+export function newWorld(wardMax: number): World {
   return {
     time: 0, enemies: [], pprojs: [], eprojs: [], fx: [], rings: [], arcs: [], texts: [],
-    wizHp: wizMax, wizMax, wizFlash: 0, kills: 0, damageTaken: 0, nextId: 1,
+    wardHp: wardMax, wardMax, wardFlash: 0, kills: 0, damageTaken: 0, nextId: 1,
   };
 }
 

@@ -10,14 +10,14 @@ import { createSpellStrip } from './spellstrip';
 type Phase = 'delay' | 'fight' | 'ending';
 
 export function createGame(container: HTMLElement, opts: BattleOptions): BattleHandle {
-  const { plan, floor, wizardMaxHp, onEnd, graph, catalog } = opts;
+  const { plan, floor, wardMaxHp, onEnd, graph, catalog } = opts;
   const canvas = document.createElement('canvas');
   canvas.className = 'battle-canvas';
   container.classList.add('battle-root');
   container.appendChild(canvas);
   const ctx = canvas.getContext('2d')!;
 
-  const world = newWorld(wizardMaxHp);
+  const world = newWorld(wardMaxHp);
   const castTime = Math.max(0.05, plan.castTime);
   const stagger = Math.max(0, plan.stagger);
   const hasShots = plan.shots.length > 0;
@@ -85,7 +85,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   let queue: { t: number; kind: EnemyKind }[] = [];
   let charge = 0;
   let hurtT = 0;
-  let prevHp = world.wizHp;
+  let prevHp = world.wardHp;
   let bannerT = 0;
   const BANNER_DUR = 1.5;
   const casts: { i: number; t: number }[] = [];
@@ -134,11 +134,11 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
 
   function update(dt: number): void {
     world.time += dt;
-    world.wizFlash = Math.max(0, world.wizFlash - dt);
+    world.wardFlash = Math.max(0, world.wardFlash - dt);
     hurtT = Math.max(0, hurtT - dt);
     bannerT = Math.max(0, bannerT - dt);
-    if (world.wizHp < prevHp) hurtT = 0.5;
-    prevHp = world.wizHp;
+    if (world.wardHp < prevHp) hurtT = 0.5;
+    prevHp = world.wardHp;
     if (phase !== 'ending') elapsed += dt;
     wantFire = Math.max(0, wantFire - dt);
 
@@ -198,7 +198,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     updateFx(world, dt);
     sweepDead(world);
 
-    if (world.wizHp <= 0) { finish(false); return; }
+    if (world.wardHp <= 0) { finish(false); return; }
     if (phase === 'fight' && queue.length === 0 && world.enemies.length === 0) {
       waveIdx++;
       if (waveIdx >= floor.waves.length) finish(true);
@@ -226,7 +226,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
         sub: kindName ? `Floor ${floor.floor} — ${kindName}` : `Floor ${floor.floor}`,
         alpha: bAlpha,
       } : null,
-      overlay: phase === 'ending' ? { text: won ? 'Floor cleared' : 'The wizard has fallen', good: won } : null,
+      overlay: phase === 'ending' ? { text: won ? 'Floor cleared' : 'The ward has shattered', good: won } : null,
       charge, castTime, hasShots, mouse, orbColor, time: world.time,
       sinceCast: world.time - lastCast,
       ui: Math.max(1, Math.min(1.7, 1 / scale)),

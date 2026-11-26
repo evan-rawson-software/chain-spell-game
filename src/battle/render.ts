@@ -498,10 +498,10 @@ function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number
 
 function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   const u = h.ui;
-  // wizard HP
+  // ward HP
   const hpW = 240 * u, hpH = 20 * u;
-  bar(ctx, 20, 16, hpW, hpH, w.wizHp / w.wizMax, '#d94452');
-  label(ctx, `HP ${Math.ceil(w.wizHp)} / ${w.wizMax}`, 20 + hpW / 2, 16 + hpH * 0.78, 14 * u, 'center');
+  bar(ctx, 20, 16, hpW, hpH, w.wardHp / w.wardMax, '#d94452');
+  label(ctx, `HP ${Math.ceil(w.wardHp)} / ${w.wardMax}`, 20 + hpW / 2, 16 + hpH * 0.78, 14 * u, 'center');
   // charge (the spell strip below shows detail)
   const frac = h.hasShots ? h.charge / h.castTime : 0;
   const ready = h.hasShots && h.charge >= h.castTime;

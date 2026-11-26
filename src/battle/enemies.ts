@@ -1,6 +1,6 @@
 import type { Element, EnemyKind } from '../types';
 import {
-  ELEMENT_COLOR, ENEMY_CFG, H, WIZ_R, WIZ_X, WIZ_Y, W, burst, floatText,
+  ELEMENT_COLOR, ENEMY_CFG, H, WARD_R, WARD_X, WARD_Y, W, burst, floatText,
   type Enemy, type World,
 } from './model';
 import { damageTakenMul, moveMul, newStatus, tickStatus } from './status';
@@ -41,19 +41,19 @@ function killEnemy(w: World, e: Enemy): void {
   w.rings.push({ x: e.x, y: e.y, r: e.r * 0.5, maxR: e.r * 1.8, t: 0, max: 0.35, color: e.cfg.color });
 }
 
-export function damageWizard(w: World, n: number): void {
-  if (w.wizHp <= 0) return;
-  const d = Math.min(n, w.wizHp);
-  w.wizHp -= d;
+export function damageWard(w: World, n: number): void {
+  if (w.wardHp <= 0) return;
+  const d = Math.min(n, w.wardHp);
+  w.wardHp -= d;
   w.damageTaken += d;
-  w.wizFlash = 0.25;
-  floatText(w, WIZ_X, WIZ_Y - 50, '-' + Math.round(d), '#ff5a5a', 18, 1);
-  burst(w, WIZ_X, WIZ_Y, '#ff5a5a', 8, 120, 0.4);
+  w.wardFlash = 0.25;
+  floatText(w, WARD_X, WARD_Y - 50, '-' + Math.round(d), '#ff5a5a', 18, 1);
+  burst(w, WARD_X, WARD_Y, '#ff5a5a', 8, 120, 0.4);
 }
 
 function fireEnemyShots(w: World, e: Enemy): void {
   const r = e.cfg.ranged!;
-  const base = Math.atan2(WIZ_Y - e.y, WIZ_X - e.x);
+  const base = Math.atan2(WARD_Y - e.y, WARD_X - e.x);
   const spread = (r.spreadDeg * Math.PI) / 180;
   for (let i = 0; i < r.count; i++) {
     const a = r.count > 1 ? base - spread / 2 + (spread * i) / (r.count - 1) : base;
@@ -99,15 +99,15 @@ export function updateEnemies(w: World, dt: number, hpScale: number): void {
         e.cd = cfg.ranged.cd;
       }
     } else if (cfg.melee) {
-      const dx = WIZ_X - e.x, dy = WIZ_Y - e.y;
+      const dx = WARD_X - e.x, dy = WARD_Y - e.y;
       const dist = Math.hypot(dx, dy);
-      const reach = e.r + WIZ_R - 4;
+      const reach = e.r + WARD_R - 4;
       if (dist > reach) {
         const s = Math.min(cfg.speed * mul * dt, dist - reach + 1);
         e.x += (dx / dist) * s;
         e.y += (dy / dist) * s;
       } else if (e.cd <= 0) {
-        damageWizard(w, cfg.melee.dmg);
+        damageWard(w, cfg.melee.dmg);
         e.attackAnim = 0.25;
         e.cd = cfg.melee.cd;
       }
@@ -132,8 +132,8 @@ export function updateEnemyProjectiles(w: World, dt: number): void {
   for (const p of w.eprojs) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
-    if (Math.hypot(p.x - WIZ_X, p.y - WIZ_Y) < p.r + WIZ_R - 4) {
-      damageWizard(w, p.dmg);
+    if (Math.hypot(p.x - WARD_X, p.y - WARD_Y) < p.r + WARD_R - 4) {
+      damageWard(w, p.dmg);
       p.dead = true;
     } else if (p.x < -40 || p.x > W + 60 || p.y < -40 || p.y > H + 40) {
       p.dead = true;

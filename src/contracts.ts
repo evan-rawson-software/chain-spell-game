@@ -9,6 +9,7 @@
  *   src/editor/index.ts  -> `export const mountEditor: MountEditor`
  *   src/battle/index.ts  -> `export const mountBattle: MountBattle`
  *   src/run/index.ts     -> run flow + screens; `export function startApp(root: HTMLElement): void`
+ *   src/audio/index.ts   -> `sfx(name, opts?)`, `setMuted`, `isMuted` (any module may play sounds)
  */
 import type {
   BattleResult, CastPlan, Color, FloorDef, OutputRef, RuneCatalog, RuneDef, RuneInstance, SpellGraph,
@@ -81,7 +82,7 @@ export interface BattleOptions {
   graph: SpellGraph;
   catalog: RuneCatalog;
   floor: FloorDef;
-  wizardMaxHp: number;
+  wardMaxHp: number;
   onEnd(result: BattleResult): void;
 }
 

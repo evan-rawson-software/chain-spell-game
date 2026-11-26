@@ -1,9 +1,9 @@
-import { WIZ_X, WIZ_Y, type World } from './model';
+import { WARD_X, WARD_Y, type World } from './model';
 
 /**
- * The player's animated ground magic circle. It replaces the old wizard sprite:
+ * The player's animated ground magic circle. It is the player in combat:
  * dim and slowly turning at 0 charge, fully lit, fast and radiant at 1, with a
- * shockwave on each cast. Purely visual; the hit position stays at (WIZ_X, WIZ_Y).
+ * shockwave on each cast. Purely visual; the hit position stays at (WARD_X, WARD_Y).
  */
 
 export interface CircleInput {
@@ -82,12 +82,12 @@ export function drawMagicCircle(ctx: CanvasRenderingContext2D, w: World, h: Circ
   st.a2 -= (0.2 + 2.2 * p2 + 0.6 * p) * dt;
   st.a3 += (0.3 + 3.2 * p2 + 0.8 * p) * dt;
   st.orbit += (0.7 + 4.5 * p2 + 1.2 * p) * dt;
-  const aimA = Math.atan2(h.aimY - WIZ_Y, h.aimX - WIZ_X);
+  const aimA = Math.atan2(h.aimY - WARD_Y, h.aimX - WARD_X);
   st.aim += angleDiff(st.aim, aimA) * Math.min(1, dt * 14);
 
-  const dead = w.wizHp <= 0;
-  const hurt = w.wizFlash > 0;
-  const lowHp = !dead && w.wizHp / w.wizMax < 0.3;
+  const dead = w.wardHp <= 0;
+  const hurt = w.wardFlash > 0;
+  const lowHp = !dead && w.wardHp / w.wardMax < 0.3;
   const t = h.time;
   const col = hurt ? '#ff4a4a' : lowHp ? '#ff7a7a' : h.color;
   const base = hurt ? '#ff6666' : lowHp ? '#c88aa8' : ARCANE;
@@ -101,7 +101,7 @@ export function drawMagicCircle(ctx: CanvasRenderingContext2D, w: World, h: Circ
   const castK = h.hasShots ? Math.max(0, 1 - h.sinceCast / 0.5) : 0; // post-cast afterglow
 
   ctx.save();
-  ctx.translate(WIZ_X, WIZ_Y);
+  ctx.translate(WARD_X, WARD_Y);
 
   // ground glow
   {

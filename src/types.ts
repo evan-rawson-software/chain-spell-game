@@ -201,7 +201,7 @@ export interface RunState {
   /** Current spell. Nodes other than the root must be uids from `owned`. */
   graph: SpellGraph;
   maxMana: number;
-  wizardMaxHp: number;
+  wardMaxHp: number;
   seed: number;
 }
 

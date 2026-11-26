@@ -1,6 +1,6 @@
 # Chain Spell — Prototype Design
 
-A roguelite "spell-builder": the player is a wizard who assembles runes into a spell graph,
+A roguelite "spell-builder": the player is a warden who assembles runes into a spell graph,
 then defends against real-time waves by aiming that spell. Between floors they earn new runes
 and freely rebuild the spell.
 
@@ -17,7 +17,7 @@ Every rune has:
 | **Inputs** | ≥ 1 (except the Source rune). Each has a color and links to an open output on the previous level. Terminal runes may need more inputs than any single parent can supply (e.g. R + R + B), drawing on outputs from several parents. |
 | **Outputs** | 0–3, each colored. Open outputs are where later runes attach. |
 | **Effect** | Terminal runes (0 outputs) have a **base effect**. Branching runes (≥ 1 output) have an **augment** applied to all descendants. |
-| **Mana cost** | Counts against the wizard's max mana (build budget). |
+| **Mana cost** | Counts against the player's max mana (build budget). |
 | **Cast time** | Added to the spell's total cast time. |
 
 ### Colors
@@ -70,7 +70,7 @@ When the spell is cast:
 
 ## 3. Limits on spell size
 
-- **Mana (static build budget):** total rune mana cost must fit under the wizard's max mana.
+- **Mana (static build budget):** total rune mana cost must fit under the player's max mana.
   Not spent in combat. Max mana rises automatically after each cleared floor (+2, or +3 after
   the elite floor).
 - **Cast time:** spell cast time = base + sum of rune cast times. Bigger spells fire less often.
@@ -80,11 +80,11 @@ When the spell is cast:
 
 - The player is a stationary magic circle on the ground; enemies come in waves. The circle grows
   more animated as the spell charges and pulses when it fires.
-- **Melee enemies** walk to the wizard and damage on arrival/contact.
+- **Melee enemies** walk to the ward circle and damage on arrival/contact.
 - **Ranged enemies** stop at a distance and fire projectiles.
 - **Auto-cast:** the spell charges over its cast time and fires as soon as it is charged: toward
   the cursor when it is over the arena, otherwise at the nearest enemy.
-- Wizard HP **resets to full at the start of each floor**. Reaching 0 during a floor ends the run.
+- Ward HP **resets to full at the start of each floor**. Reaching 0 during a floor ends the run.
 
 ### Effect categories in scope
 

@@ -91,7 +91,7 @@ export function startApp(root: HTMLElement): void {
       el('h1', 'rn-logo', 'Chain Spell', box);
       el('p', 'rn-pitch',
         'Wire runes into a branching spell graph, then unleash it on waves of enemies in real time. '
-        + 'Ten floors. One wizard. Build something terrible and wonderful.', box);
+        + 'Ten floors. One circle. Build something terrible and wonderful.', box);
       const how = el('ol', 'rn-how', undefined, box);
       ['Build a spell from runes', 'Aim and cast against waves', 'Pick a new rune after each floor'].forEach((t, i) => {
         const li = el('li', undefined, undefined, how);
@@ -132,7 +132,7 @@ export function startApp(root: HTMLElement): void {
         const pip = el('span', `rn-fpip ${st} ${kind}`, kind === 'boss' ? '\u2620' : kind === 'elite' ? '\u2605' : '', track);
         pip.title = `Floor ${n}${kind !== 'normal' ? ` (${kind})` : ''} - ${st === 'done' ? 'cleared' : st}`;
       }
-      el('span', 'rn-note', `${run.wizardMaxHp} HP (resets each floor)`, left);
+      el('span', 'rn-note', `${run.wardMaxHp} HP (resets each floor)`, left);
       el('span', 'rn-note', `Max mana ${run.maxMana}`, left);
       const right = el('div', 'rn-topright', undefined, bar);
       const reason = el('span', 'rn-reason', undefined, right);
@@ -200,7 +200,7 @@ export function startApp(root: HTMLElement): void {
         graph: run.graph,
         catalog: CATALOG,
         floor: floorDef(run.floor),
-        wizardMaxHp: run.wizardMaxHp,
+        wardMaxHp: run.wardMaxHp,
         onEnd: (r: BattleResult) => {
           if (done) return;
           done = true;

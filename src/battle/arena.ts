@@ -1,5 +1,5 @@
 import type { FloorDef } from '../types';
-import { H, W, WIZ_X, WIZ_Y } from './model';
+import { H, W, WARD_X, WARD_Y } from './model';
 
 /**
  * Combat background: a dark flagstone arena. Static layers (stone, cracks, stains,
@@ -115,7 +115,7 @@ function renderStatic(kind: Kind, res: number): HTMLCanvasElement {
 
   // faint arena rune rings centred on the player's circle
   g.save();
-  g.translate(WIZ_X, WIZ_Y);
+  g.translate(WARD_X, WARD_Y);
   g.strokeStyle = th.accent;
   for (const [r, a, lw] of [[150, 0.16, 1.5], [158, 0.1, 1], [330, 0.1, 1.5], [338, 0.07, 1]] as const) {
     g.globalAlpha = a; g.lineWidth = lw;
@@ -132,7 +132,7 @@ function renderStatic(kind: Kind, res: number): HTMLCanvasElement {
   g.globalAlpha = 1;
 
   // cool-to-warm light pool around the circle
-  const pool = g.createRadialGradient(WIZ_X, WIZ_Y, 10, WIZ_X, WIZ_Y, 260);
+  const pool = g.createRadialGradient(WARD_X, WARD_Y, 10, WARD_X, WARD_Y, 260);
   pool.addColorStop(0, th.accent + '30');
   pool.addColorStop(1, 'rgba(0,0,0,0)');
   g.fillStyle = pool;
