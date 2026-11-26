@@ -212,3 +212,14 @@
 }
 .re-card.forged .re-name, .re-inv-card.forged .n { color: #f3d27a; }
 .re-node.forged:hover, .re-inv-card.forged:hover { border-color: #f3d27a; }
+
+/* Keystone runes */
+.re-card.keystone, .re-inv-card.keystone {
+  border-color: #9b6bff;
+  box-shadow: 0 0 10px rgba(155, 107, 255, 0.4);
+}
+.re-card.keystone .re-name, .re-inv-card.keystone .n { color: #c7aaff; }
+.re-node.keystone:hover, .re-inv-card.keystone:hover { border-color: #c7aaff; }
+.re-keystones { border-color: #9b6bff; background: rgba(155, 107, 255, 0.08); }
+.re-keystone-row { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; font-size: 12px; }
+.re-keystone-row b { color: #c7aaff; font-weight: 600; }

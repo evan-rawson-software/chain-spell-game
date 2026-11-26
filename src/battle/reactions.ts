@@ -114,6 +114,11 @@ export function consumeStatuses(st: StatusState, keys: StatusKey[]): void {
   }
 }
 
+/** Statuses a set of reaction plans removes; Eternal Knot (everlasting) removes none. */
+export function consumedKeys(plans: ReactionPlan[], everlasting: boolean): StatusKey[] {
+  return everlasting ? [] : plans.flatMap(p => p.consume);
+}
+
 /** Plans minus the kinds still on cooldown for this enemy (`reactAt`: kind -> time it may fire again). */
 export function readyPlans(plans: ReactionPlan[], reactAt: Record<string, number>, now: number): ReactionPlan[] {
   return plans.filter(p => (reactAt[p.kind] ?? -Infinity) <= now);

@@ -13,6 +13,7 @@ export function demoPlan(): CastPlan {
     castTime: 0.9,
     manaUsed: 8,
     stagger: 0.1,
+    keystones: [],
     shots: [
       shot({ element: 'fire', runeName: 'Fireball', damage: 52, size: 9, aoeRadius: 55, statuses: [{ kind: 'burn', potency: 8, duration: 3 }] }),
       shot({ element: 'frost', runeName: 'Frost Bolt', damage: 25, speed: 620, size: 6, pierce: 1, statuses: [{ kind: 'slow', potency: 0.4, duration: 3 }, { kind: 'wet', potency: 0.5, duration: 4 }] }),

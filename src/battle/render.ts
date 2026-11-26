@@ -38,6 +38,8 @@ export interface HudState {
   combo: { n: number; k: number } | null;
   /** multi-kill callout, k = 0..1 progress */
   callout: { text: string; color: string; k: number } | null;
+  /** Momentum keystone readout, or null */
+  momentum: string | null;
 }
 
 export function render(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
@@ -542,6 +544,9 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
     label(ctx, `Combo ×${h.combo.n}`, W - 20, 54 * u, (16 + Math.min(10, h.combo.n * 0.4)) * u, 'right', h.combo.n >= 10 ? '#ffb347' : '#ffe9a8');
     ctx.restore();
   }
+
+  // momentum readout (under the ward HP bar)
+  if (h.momentum) label(ctx, h.momentum, 20, 56 * u, 14 * u, 'left', '#ffd37a');
 
   // multi-kill callout (center top)
   if (h.callout) {

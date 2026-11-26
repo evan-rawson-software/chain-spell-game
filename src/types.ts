@@ -72,6 +72,18 @@ export interface Modifier {
 
 export type Rarity = 'starter' | 'common' | 'uncommon' | 'rare';
 
+/**
+ * Keystones change a combat rule instead of adding numbers (DESIGN.md, Keystones).
+ * A keystone rune is a terminal with no shot; owning several copies in one spell counts once.
+ */
+export type KeystoneId =
+  | 'echo'           // every 3rd cast fires the whole spell again 0.3 s later
+  | 'death_split'    // a shot that kills splits into 2 homing shards (50% damage, no further splits)
+  | 'everlasting'    // reactions don't consume statuses
+  | 'chain_reaction' // reaction damage can trigger reactions (max depth 3)
+  | 'frostfire'      // fire hits also slow (30% 1.5 s); frost hits also burn (5 dps 2 s)
+  | 'momentum';      // +10% damage per cast since the ward was last hit, up to +100%
+
 /** Base stats of a terminal rune's shot. */
 export interface ShotBase {
   element: Element;
@@ -106,6 +118,8 @@ export interface RuneDef {
   shot?: ShotBase;
   /** Terminal runes only: modifiers applied to EVERY shot in the spell, plus spell-wide stats. */
   globals?: Modifier[];
+  /** Terminal runes only: the rule this keystone turns on. */
+  keystone?: KeystoneId;
 }
 
 export type RuneCatalog = Record<string, RuneDef>;
@@ -160,6 +174,8 @@ export interface CastPlan {
   shots: ResolvedShot[];
   /** seconds between consecutive shots in one cast */
   stagger: number;
+  /** Keystone rules active in this spell (unique, in node order). */
+  keystones: KeystoneId[];
 }
 
 // ---------------------------------------------------------------- Encounters

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COLOR_BITS } from '../types';
-import type { Color } from '../types';
+import type { Color, KeystoneId } from '../types';
 import { CATALOG, ROOT_UID, SOURCE_ID, STARTER_KIT, runeTooltip, starterGraph } from './runes';
 
 const defs = Object.values(CATALOG);
@@ -26,7 +26,7 @@ describe('rune catalog', () => {
     for (const d of defs) {
       if (d.id === SOURCE_ID) continue;
       if (d.outputs.length === 0) {
-        expect(d.shot || d.globals, d.id).toBeTruthy();
+        expect(d.shot || d.globals || d.keystone, d.id).toBeTruthy();
         expect(d.augments, d.id).toBeUndefined();
       } else {
         expect(d.shot, d.id).toBeUndefined();
@@ -87,6 +87,18 @@ describe('rune catalog', () => {
     expect(g.links).toContainEqual({ from: { uid: uid('amplify'), output: 0 }, toUid: uid('fireball'), toInput: 0 });
     const mana = g.nodes.reduce((s, n) => s + CATALOG[n.defId].mana, 0);
     expect(mana).toBeLessThanOrEqual(8);
+  });
+
+  it('every keystone id has exactly one rune, with no shot', () => {
+    const ids: KeystoneId[] = ['echo', 'death_split', 'everlasting', 'chain_reaction', 'frostfire', 'momentum'];
+    for (const k of ids) expect(defs.filter((d) => d.keystone === k), k).toHaveLength(1);
+    expect(defs.filter((d) => d.keystone)).toHaveLength(ids.length);
+    for (const d of defs.filter((x) => x.keystone)) {
+      expect(d.outputs).toHaveLength(0);
+      expect(d.shot).toBeUndefined();
+      expect(d.description.startsWith('Keystone.')).toBe(true);
+      expect(runeTooltip(d)).toContain('Keystone:');
+    }
   });
 
   it('tooltips render', () => {

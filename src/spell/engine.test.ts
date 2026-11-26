@@ -37,6 +37,8 @@ const CAT: RuneCatalog = {
   triple: def('triple', { inputs: ['R', 'R', 'B'], shot: shot({ damage: 5 }) }),
   white: def('white', { inputs: ['W'], shot: shot({ element: 'pure' }) }),
   thorn: def('thorn', { inputs: ['G'], shot: shot({ element: 'nature' }) }),
+  keyR: def('keyR', { inputs: ['R'], mana: 3, keystone: 'momentum' }),
+  keyB: def('keyB', { inputs: ['B'], mana: 3, keystone: 'echo' }),
   catalyst: def('catalyst', {
     inputs: ['R'],
     globals: [{ stat: 'damage', op: 'increased', value: 0.5 }],
@@ -395,6 +397,31 @@ describe('validateSpell', () => {
     // base 0.5 + 0.2 = 0.7, x2
     expect(validateSpell(g, CAT, 99).castTime).toBeCloseTo(1.4);
     expect(compileSpell(g, CAT).castTime).toBeCloseTo(1.4);
+  });
+});
+
+describe('compileSpell keystones', () => {
+  it('collects unique keystones in node order and fires no shot for them', () => {
+    let g = add(rootGraph(), 'k1', 'keyB');
+    g = add(g, 'd', 'dup');
+    g = add(g, 'k2', 'keyR');
+    g = add(g, 'k3', 'keyR');
+    const plan = compileSpell(g, CAT);
+    expect(plan.keystones).toEqual(['echo', 'momentum']);
+    expect(plan.shots).toHaveLength(0);
+    expect(plan.manaUsed).toBe(10);
+  });
+
+  it('empty keystones when none placed', () => {
+    expect(compileSpell(rootGraph(), CAT).keystones).toEqual([]);
+    expect(compileSpell(add(rootGraph(), 'f', 'fire'), CAT).keystones).toEqual([]);
+  });
+
+  it('forging a keystone only lowers mana', () => {
+    const up = upgradeDef(CAT.keyR);
+    expect(up.mana).toBe(2);
+    expect(up.keystone).toBe('momentum');
+    expect(up.shot).toBeUndefined();
   });
 });
 

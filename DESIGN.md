@@ -105,6 +105,19 @@ further reactions, and is scaled by the reaction-damage battle mod.
 
 The existing Wet bonus to lightning still applies to the triggering hit.
 
+### Keystones
+Rare terminal runes that fire nothing and change a combat rule instead of adding numbers.
+Several copies of the same keystone in one spell count once.
+
+| Rune | In | Rule |
+|---|---|---|
+| Echo Glyph | P | Every 3rd cast fires the whole spell again 0.3 s later. |
+| Hydra Sigil | Y | A shot that kills an enemy splits into 2 homing shards (50% damage; shards don't split). |
+| Eternal Knot | T | Reactions don't consume statuses. |
+| Cascade Core | W | Reaction damage can trigger further reactions (up to 3 deep). |
+| Frostfire Seal | R + B | Fire hits also slow (30%, 1.5 s); frost hits also burn (5 dps, 2 s). |
+| Momentum | R | +10% damage per cast since the ward was last hit, up to +100%; resets when hit. |
+
 ### Big spell moments
 - Screen shake from explosions, reactions, big hits, ward hits and elite/boss deaths (reduced
   under `prefers-reduced-motion`).
@@ -185,13 +198,17 @@ Each run starts by picking a school, which sets the starter kit, starting spell 
 
 Starting spell: `Source →R→ Amplify →R→ Fireball` and `Source →B→ Frost Bolt`. Max mana 8.
 
-## 6. Tech
+## 6. Dev tools
+Open the game with `?dev` in the URL for a dev panel: jump to any map node, add gold, runes or
+boons, set max mana, and in battle win, lose or speed the game up. Not shown without the flag.
+
+## 7. Tech
 
 - TypeScript + Vite, no framework.
 - Canvas 2D for the battle arena; DOM/SVG for the Rune Editor (node graph with drag-to-connect).
 - Rune definitions as data (JSON/TS objects) so balance tweaks need no code changes.
 - Spell evaluation as a pure, unit-tested module (graph → list of resolved terminal effects).
 
-## 7. Scope decisions
+## 8. Scope decisions
 
 - No meta-progression in the MVP: every run starts from a school's starter kit.

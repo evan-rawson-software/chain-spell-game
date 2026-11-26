@@ -64,6 +64,8 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
   `src/run/state.ts`); cast time is the in-combat cost. Battles reward gold and runes (pick 2 of 5);
   elites and shrines give blessings; shops sell runes, forging and curse removal. Ward HP resets
   each floor.
+- Keystones (`RuneDef.keystone`) are shotless terminals that turn on a combat rule; `CastPlan.keystones`
+  lists them and `src/battle/keystones.ts` implements them.
 - Reactions: a hit checks the enemy's statuses before applying its own (`src/battle/reactions.ts`).
 - Forged runes (`RuneInstance.plus`) resolve through `defOf`/`upgradeDef`; never read
   `catalog[inst.defId]` directly for an instance.
@@ -74,4 +76,5 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
 - For larger coding tasks, act as orchestrator: split the work by module (the folders above own
   disjoint files) and run parallel Sonnet subagents, then integrate and verify.
 - Verify gameplay changes in the browser (dev server), not just with tests: start a run, place a
-  rune, fight a floor, and check the console for errors.
+  rune, fight a floor, and check the console for errors. Open `http://localhost:5173/?dev` for the
+  dev panel (`src/run/dev.ts`): jump to any map node, grant gold/runes/boons, win/lose/speed up battles.

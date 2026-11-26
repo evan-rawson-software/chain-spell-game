@@ -1,4 +1,5 @@
-import type { BattleMods, Element, EnemyKind, ResolvedShot, StatusKind } from '../types';
+import { keystoneFlags, type KeystoneFlags } from './keystones';
+import type { BattleMods, KeystoneId, Element, EnemyKind, ResolvedShot, StatusKind } from '../types';
 
 export const W = 1000;
 export const H = 600;
@@ -64,6 +65,8 @@ export interface PProj {
   pierceLeft: number;
   dead: boolean;
   age: number;
+  /** spawned by Hydra Sigil: never splits again */
+  shard?: boolean;
 }
 
 export interface EProj {
@@ -114,6 +117,10 @@ export interface World {
   combo: { n: number; last: number };
   callout: { text: string; color: string; t: number; max: number } | null;
   lastReactSfx: number;
+  /** active keystone rules */
+  ks: KeystoneFlags;
+  /** casts since the ward was last damaged (Momentum) */
+  momentum: number;
 }
 
 export const NEUTRAL_MODS: BattleMods = {
@@ -152,13 +159,14 @@ export const ENEMY_CFG: Record<EnemyKind, EnemyCfg> = {
   },
 };
 
-export function newWorld(wardMax: number, mods: BattleMods = NEUTRAL_MODS): World {
+export function newWorld(wardMax: number, mods: BattleMods = NEUTRAL_MODS, keystones: readonly KeystoneId[] = []): World {
   return {
     time: 0, enemies: [], pprojs: [], eprojs: [], fx: [], rings: [], arcs: [], texts: [],
     wardHp: wardMax, wardMax, wardFlash: 0, kills: 0, damageTaken: 0, nextId: 1,
     mods: { ...NEUTRAL_MODS, ...mods }, reactions: 0, bestHit: 0,
     trauma: 0, hitStopReq: 0, slowmoReq: 0, flashReq: 0, killTimes: [], multiShown: 0,
     combo: { n: 0, last: -99 }, callout: null, lastReactSfx: -99,
+    ks: keystoneFlags(keystones), momentum: 0,
   };
 }
 

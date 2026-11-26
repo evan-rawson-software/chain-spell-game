@@ -4,7 +4,7 @@
  */
 import { COLOR_BITS } from '../types';
 import type {
-  CastPlan, Color, Link, Modifier, OutputRef, ResolvedShot, RuneCatalog, RuneDef, RuneInstance, ShotStat,
+  CastPlan, Color, KeystoneId, Link, Modifier, OutputRef, ResolvedShot, RuneCatalog, RuneDef, RuneInstance, ShotStat,
   SpellGraph, StatusApplication,
 } from '../types';
 import type { OpenOutput, Placement, SpellEngine, ValidationResult } from '../contracts';
@@ -531,11 +531,18 @@ export function compileSpell(graph: SpellGraph, catalog: RuneCatalog, extraGloba
     shots.push(resolveShot(uid, def, mods));
   }
 
+  const keystones: KeystoneId[] = [];
+  for (const n of graph.nodes) {
+    const k = defOf(catalog, n)?.keystone;
+    if (k && !keystones.includes(k)) keystones.push(k);
+  }
+
   return {
     castTime: computeCastTime(graph, catalog),
     manaUsed: computeMana(graph, catalog, a),
     shots,
     stagger: STAGGER,
+    keystones,
   };
 }
 

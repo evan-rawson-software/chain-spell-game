@@ -59,6 +59,7 @@ export function damageWard(w: World, n: number): void {
   w.wardHp -= d;
   w.damageTaken += d;
   w.wardFlash = 0.25;
+  w.momentum = 0;
   sfx('wardHit');
   addTrauma(w, 0.3);
   floatText(w, WARD_X, WARD_Y - 50, '-' + Math.round(d), '#ff5a5a', 18, 1);

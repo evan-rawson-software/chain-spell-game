@@ -1,4 +1,4 @@
-import type { BoonTotals } from '../contracts';
+import type { BattleHandle, BoonTotals } from '../contracts';
 import type { BattleResult, BoonDef, MapNode, RunState } from '../types';
 
 export type Cleanup = () => void;
@@ -12,6 +12,12 @@ export interface App {
   /** Shop stock indexes already bought at the current shop. */
   sold: number[];
   lastResult: BattleResult | null;
+  /** Live battle (set by the battle screen, null otherwise); used by the ?dev panel. */
+  battle: BattleHandle | null;
+  /** Name of the screen last opened through `goto` (dev panel use). */
+  current: string;
+  /** Called after every `goto` screen change (dev panel use). */
+  onScreen?: () => void;
   boons: Record<string, BoonDef>;
   /** Combined effects of the held blessings/curses. */
   totals(): BoonTotals;

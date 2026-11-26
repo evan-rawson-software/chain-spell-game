@@ -117,6 +117,8 @@ export interface BattleOptions {
 
 export interface BattleHandle {
   destroy(): void;
+  /** Dev tools (?dev): end the fight now, or change the game speed (1 = normal). */
+  debug?: { win(): void; lose(): void; setSpeed(x: number): void };
 }
 
 export type MountBattle = (container: HTMLElement, opts: BattleOptions) => BattleHandle;

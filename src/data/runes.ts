@@ -323,6 +323,32 @@ const defs: Record<string, Def> = {
     globals: [more('damage', 0.35), inc('castTime', 0.3)],
     description: 'Fires nothing. Every shot deals x1.35 damage, but the whole spell casts 30% slower.',
   },
+
+  // ------------------------------------------------------------ Keystones (rare terminals, no shot)
+  echo_glyph: {
+    name: 'Echo Glyph', rarity: 'rare', inputs: ['P'], outputs: [], mana: 4, castTime: 0.2, keystone: 'echo',
+    description: 'Keystone. Every 3rd cast fires the whole spell again 0.3 seconds later.',
+  },
+  hydra_sigil: {
+    name: 'Hydra Sigil', rarity: 'rare', inputs: ['Y'], outputs: [], mana: 4, castTime: 0.2, keystone: 'death_split',
+    description: 'Keystone. A shot that kills an enemy splits into 2 homing shards that deal 50% damage and do not split again.',
+  },
+  eternal_knot: {
+    name: 'Eternal Knot', rarity: 'rare', inputs: ['T'], outputs: [], mana: 4, castTime: 0.2, keystone: 'everlasting',
+    description: 'Keystone. Reactions no longer consume the statuses that trigger them.',
+  },
+  cascade_core: {
+    name: 'Cascade Core', rarity: 'rare', inputs: ['W'], outputs: [], mana: 4, castTime: 0.3, keystone: 'chain_reaction',
+    description: 'Keystone. Reaction damage can trigger further reactions, up to 3 deep.',
+  },
+  frostfire_seal: {
+    name: 'Frostfire Seal', rarity: 'rare', inputs: ['R', 'B'], outputs: [], mana: 4, castTime: 0.2, keystone: 'frostfire',
+    description: 'Keystone. Fire hits also slow enemies (30% for 1.5 seconds); frost hits also burn them (5 damage per second for 2 seconds).',
+  },
+  momentum: {
+    name: 'Momentum', rarity: 'rare', inputs: ['R'], outputs: [], mana: 3, castTime: 0.1, keystone: 'momentum',
+    description: 'Keystone. +10% damage for every cast since your ward was last hit, up to +100%. Resets when the ward is hit.',
+  },
 };
 
 export const CATALOG: RuneCatalog = Object.fromEntries(
@@ -400,6 +426,7 @@ export function runeTooltip(def: RuneDef): string {
   const lines: string[] = [def.name];
   lines.push(`In: ${def.inputs.length ? def.inputs.join(' + ') : 'none'}   Out: ${def.outputs.length ? def.outputs.join(', ') : 'none'}`);
   lines.push(`Mana ${def.mana}   Cast ${sgn(def.castTime)}s`);
+  if (def.keystone) lines.push(def.description.replace(/^Keystone\.\s*/, 'Keystone: '));
   if (def.shot) {
     const s = def.shot;
     const parts = [`${ELEMENT_NAME[s.element]} ${s.damage} dmg`];

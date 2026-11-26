@@ -14,6 +14,7 @@ import { shrineScreen } from './screens/shrine';
 import { titleScreen } from './screens/title';
 import { findNode } from './map';
 import { manaGain, newRun, saveRun, type Phase } from './state';
+import { installDevPanel } from './dev';
 import { el } from './ui';
 
 export { FLOOR_COUNT, floorDef } from './floors';
@@ -30,6 +31,8 @@ export function startApp(root: HTMLElement): void {
     sold: [],
     get lastResult(): BattleResult | null { return lastResult; },
     set lastResult(r: BattleResult | null) { lastResult = r; },
+    battle: null,
+    current: 'title',
     boons: BOONS,
     totals: () => combineBoons(app.run.boons),
     node: () => findNode(app.run.map, app.run.at),
@@ -92,6 +95,17 @@ export function startApp(root: HTMLElement): void {
     },
   };
 
+  // Track the current screen for the dev panel (resume/newRun/pickNode delegate to the others).
+  for (const name of Object.keys(app.goto) as (keyof App['goto'])[]) {
+    if (name === 'resume' || name === 'newRun' || name === 'pickNode') continue;
+    const fn = app.goto[name] as (...a: unknown[]) => void;
+    (app.goto as unknown as Record<string, (...a: unknown[]) => void>)[name] = (...a: unknown[]): void => {
+      app.current = name;
+      fn(...a);
+      app.onScreen?.();
+    };
+  }
+
   // Mute toggle: lives on <body> so it survives screen changes.
   const muteBtn = document.createElement('button');
   muteBtn.className = 'rn-mute';
@@ -108,5 +122,6 @@ export function startApp(root: HTMLElement): void {
   syncMute();
   document.body.appendChild(muteBtn);
 
+  if (new URLSearchParams(location.search).has('dev')) installDevPanel(app);
   app.goto.title();
 }

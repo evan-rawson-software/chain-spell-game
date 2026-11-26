@@ -88,6 +88,7 @@ export function battleScreen(app: App): void {
         }, 0);
       },
     });
-    return () => { done = true; handle.destroy(); };
+    app.battle = handle;
+    return () => { done = true; app.battle = null; handle.destroy(); };
   });
 }

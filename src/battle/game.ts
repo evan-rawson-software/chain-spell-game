@@ -2,7 +2,8 @@ import type { BattleHandle, BattleOptions } from '../contracts';
 import type { EnemyKind } from '../types';
 import { spawnEnemy, sweepDead, updateEnemies, updateEnemyProjectiles } from './enemies';
 import { addTrauma, comboState, isLargeCast } from './juice';
-import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, newWorld, updateFx } from './model';
+import { ECHO_DELAY, echoDue, momentumLabel, momentumMul } from './keystones';
+import { ELEMENT_COLOR, floatText, H, MUZZLE_X, MUZZLE_Y, W, newWorld, updateFx } from './model';
 import { fireShot, updatePlayerProjectiles } from './projectiles';
 import { render, type HudState } from './render';
 import { createSpellStrip } from './spellstrip';
@@ -19,7 +20,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   container.appendChild(canvas);
   const ctx = canvas.getContext('2d')!;
 
-  const world = newWorld(wardMaxHp, opts.mods);
+  const world = newWorld(wardMaxHp, opts.mods, plan.keystones);
   const largeCast = isLargeCast(plan.shots);
   const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const shakeMul = reducedMotion ? 0.3 : 1;
@@ -97,7 +98,9 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   let prevHp = world.wardHp;
   let bannerT = 0;
   const BANNER_DUR = 1.5;
-  const casts: { i: number; t: number }[] = [];
+  const casts: { i: number; t: number; mul: number; echo: boolean }[] = [];
+  let castCount = 0;
+  let simSpeed = 1;
   let lastCast = -99;
   let lastAim = { x: 500, y: 300 };
   let endT = 0;
@@ -132,6 +135,17 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       if (d < bd) { bd = d; best = { x: e.x, y: e.y }; }
     }
     return best;
+  }
+
+  /** Echo Glyph cue: a pulse and callout when queued, a second pulse when the echo volley fires. */
+  function echoCue(fire: boolean): void {
+    world.rings.push({ x: MUZZLE_X, y: MUZZLE_Y, r: 20, maxR: fire ? 95 : 70, t: 0, max: 0.4, color: '#c9a6ff' });
+    if (fire) {
+      world.rings.push({ x: MUZZLE_X, y: MUZZLE_Y, r: 10, maxR: 60, t: 0, max: 0.3, color: '#ffffff' });
+      sfx('castFire', { pitch: 1.25 });
+    } else {
+      floatText(world, MUZZLE_X + 40, MUZZLE_Y - 60, 'ECHO', '#c9a6ff', 20, 1, true);
+    }
   }
 
   function finish(victory: boolean): void {
@@ -179,7 +193,14 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
         charge = 0;
         wantFire = 0;
         lastCast = world.time;
-        casts.push({ i: 0, t: 0 });
+        const mul = world.ks.momentum ? momentumMul(world.momentum) : 1;
+        if (world.ks.momentum) world.momentum++;
+        casts.push({ i: 0, t: 0, mul, echo: false });
+        castCount++;
+        if (world.ks.echo && echoDue(castCount)) {
+          casts.push({ i: 0, t: ECHO_DELAY, mul, echo: true });
+          echoCue(false);
+        }
         sfx('castFire');
         if (largeCast) addTrauma(world, 0.2);
       }
@@ -189,7 +210,8 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       while (c.t <= 0 && c.i < plan.shots.length) {
         const a = aimPoint() ?? lastAim;
         lastAim = a;
-        fireShot(world, plan.shots[c.i], a.x, a.y);
+        if (c.echo && c.i === 0) echoCue(true);
+        fireShot(world, plan.shots[c.i], a.x, a.y, c.mul);
         flashes.set(plan.shots[c.i].sourceUid, world.time);
         c.i++;
         c.t += stagger;
@@ -254,6 +276,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       hurt: Math.min(1, hurtT / 0.5),
       offX: -offX / scale, viewW: cssW / scale, pxScale: dpr * scale, aimX: aim.x, aimY: aim.y,
       bigCast: largeCast, combo: comboState(world),
+      momentum: world.ks.momentum ? momentumLabel(world.momentum) : null,
       callout: co ? { text: co.text, color: co.color, k: co.t / co.max } : null,
     };
     render(ctx, world, hud);
@@ -305,7 +328,13 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     if (stopT > 0) { stopT -= realDt; dt = 0; }
     else if (slowT > 0) dt = realDt * SLOWMO_SCALE;
     slowT = Math.max(0, slowT - realDt);
-    if (dt > 0) update(dt);
+    // sub-step so a fast-forwarded frame stays stable (steps of at most 0.05 s)
+    let rem = dt * simSpeed;
+    while (rem > 1e-6) {
+      const step = Math.min(0.05, rem);
+      update(step);
+      rem -= step;
+    }
     draw();
     if (ended) { cancelAnimationFrame(raf); raf = 0; }
   }
@@ -331,6 +360,11 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       canvas.removeEventListener('contextmenu', onCtx);
       canvas.remove();
       container.classList.remove('battle-root');
+    },
+    debug: {
+      win(): void { if (phase !== 'ending') finish(true); },
+      lose(): void { if (phase !== 'ending') finish(false); },
+      setSpeed(x: number): void { simSpeed = Math.max(0.25, Math.min(8, Number.isFinite(x) ? x : 1)); },
     },
   };
 }

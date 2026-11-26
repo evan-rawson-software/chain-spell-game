@@ -1,6 +1,6 @@
 import './editor.css';
 import { COLOR_HEX } from '../types';
-import type { Color, Element, Modifier, OutputRef, RuneDef, RuneInstance, SpellGraph } from '../types';
+import type { Color, Element, KeystoneId, Modifier, OutputRef, RuneDef, RuneInstance, SpellGraph } from '../types';
 import type { EditorHandle, EditorOptions, MountEditor, Placement } from '../contracts';
 import {
   compileSpell, defOf as resolveDef, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
@@ -63,8 +63,17 @@ function modText(m: Modifier): string {
   if (m.op === 'more') return `x${fmt(Math.round((1 + m.value) * 100) / 100)} ${label}`;
   return `${sign(m.value)}${fmt(Math.abs(m.value))} ${label}`;
 }
+const KEYSTONE_RULE: Record<KeystoneId, { name: string; short: string }> = {
+  echo: { name: 'Echo', short: 'Every 3rd cast fires twice' },
+  death_split: { name: 'Death Split', short: 'Kills split into 2 homing shards' },
+  everlasting: { name: 'Everlasting', short: 'Reactions keep statuses' },
+  chain_reaction: { name: 'Chain Reaction', short: 'Reactions can trigger reactions' },
+  frostfire: { name: 'Frostfire', short: 'Fire hits slow, frost hits burn' },
+  momentum: { name: 'Momentum', short: '+10% damage per cast, resets on hit' },
+};
 /** One-line effect summary for a rune card. */
 function summarize(def: RuneDef): string {
+  if (def.keystone) return KEYSTONE_RULE[def.keystone].short;
   const parts: string[] = [];
   if (def.shot) {
     const s = def.shot;
@@ -381,13 +390,13 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   }
 
   function buildCard(def: RuneDef, x: number, y: number, ghost: boolean, linkedIn?: Set<number>, openOut?: Set<number>): HTMLElement {
-    const card = h('div', `re-card ${ghost ? 're-ghost' : 're-node'}${isForged(def) ? ' forged' : ''}`);
+    const card = h('div', `re-card ${ghost ? 're-ghost' : 're-node'}${isForged(def) ? ' forged' : ''}${def.keystone ? ' keystone' : ''}`);
     card.style.left = `${x}px`;
     card.style.top = `${y}px`;
     card.style.width = `${CARD_W}px`;
     card.style.height = `${nodeHeight(def)}px`;
     card.style.setProperty('--rc', cardAccent(def));
-    card.appendChild(h('div', 're-name', def.name));
+    card.appendChild(h('div', 're-name', def.keystone ? `◆ ${def.name}` : def.name));
     const sum = h('div', 're-sum', summarize(def));
     sum.title = summarize(def);
     card.appendChild(sum);
@@ -782,6 +791,19 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     }
     stats.appendChild(sbox);
 
+    if (plan && plan.keystones.length) {
+      stats.appendChild(h('h3', undefined, 'Keystones'));
+      const kbox = h('div', 're-box re-keystones');
+      for (const k of plan.keystones) {
+        const r = KEYSTONE_RULE[k];
+        const row = h('div', 're-keystone-row');
+        row.appendChild(h('b', undefined, `◆ ${r.name}`));
+        row.appendChild(h('span', undefined, r.short));
+        kbox.appendChild(row);
+      }
+      stats.appendChild(kbox);
+    }
+
     stats.appendChild(h('h3', undefined, 'Shots'));
     const shotBox = h('div', 're-box');
     if (!plan || plan.shots.length === 0) {
@@ -841,9 +863,9 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       const grid = h('div', 're-inv-grid');
       for (const o of list) {
         const d = defOf(o)!;
-        const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}${o.plus ? ' forged' : ''}`);
+        const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}${o.plus ? ' forged' : ''}${d.keystone ? ' keystone' : ''}`);
         card.style.setProperty('--rar', RARITY_COLOR[d.rarity] ?? RARITY_COLOR.common);
-        card.appendChild(h('div', 'n', d.name));
+        card.appendChild(h('div', 'n', d.keystone ? `◆ ${d.name}` : d.name));
         card.appendChild(h('div', 's', summarize(d)));
         const pips = h('div', 're-pips');
         pips.appendChild(h('span', 're-io', 'In'));

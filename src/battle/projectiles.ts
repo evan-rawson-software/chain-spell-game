@@ -4,9 +4,10 @@ import { damageEnemy } from './enemies';
 import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, burst, floatText, type Enemy, type PProj, type World } from './model';
 import { addTrauma } from './juice';
 import {
-  consumeStatuses, markTriggered, planReactions, reactionMult, readyPlans, type ReactionPlan,
+  consumeStatuses, consumedKeys, markTriggered, planReactions, reactionMult, readyPlans, type ReactionPlan,
 } from './reactions';
 import { applyStatus } from './status';
+import { canReact, canSplit, frostfireStatuses, shardHeadings, shardShot } from './keystones';
 import { sfx } from '../audio';
 
 const CHAIN_RANGE = 200;
@@ -22,7 +23,8 @@ const HIT_SFX: Record<Element, SfxName> = {
 };
 
 /** Spawn all projectiles of one shot, aimed at (tx, ty). */
-export function fireShot(w: World, shot: ResolvedShot, tx: number, ty: number): void {
+export function fireShot(w: World, baseShot: ResolvedShot, tx: number, ty: number, dmgMul = 1): void {
+  const shot = dmgMul === 1 ? baseShot : { ...baseShot, damage: baseShot.damage * dmgMul };
   const base = Math.atan2(ty - MUZZLE_Y, tx - MUZZLE_X);
   const n = Math.max(1, Math.round(shot.count));
   const spread = (shot.spreadDeg * Math.PI) / 180;
@@ -50,27 +52,44 @@ function nearest(w: World, x: number, y: number, exclude: Set<number>, maxDist =
   return best;
 }
 
-function applyHit(w: World, e: Enemy, shot: ResolvedShot, dmg: number): void {
-  // reactions look at the statuses BEFORE this hit applies its own
-  const plans = e.dead ? [] : readyPlans(planReactions(e.st, shot.element), e.reactAt, w.time);
+/**
+ * One hit of `element` on `e`: reactions are planned from the statuses BEFORE the hit's own are
+ * applied. `depth` 0 is a shot's own hit; reaction damage re-enters at depth + 1 and only reacts
+ * with the Cascade Core keystone (see canReact).
+ */
+function resolveHit(w: World, e: Enemy, element: Element, dmg: number, depth: number): void {
+  const plans = e.dead || !canReact(depth, w.ks.chain_reaction)
+    ? [] : readyPlans(planReactions(e.st, element), e.reactAt, w.time);
   const rdm = w.mods.reactionDamageMul;
-  damageEnemy(w, e, dmg * reactionMult(plans, rdm), shot.element, false, { reaction: plans.length > 0 });
+  damageEnemy(w, e, dmg * reactionMult(plans, rdm), element, false, { reaction: depth > 0 || plans.length > 0 });
   if (plans.length) {
     markTriggered(plans, e.reactAt, w.time);
-    consumeStatuses(e.st, plans.flatMap(p => p.consume));
-    plans.forEach((p, i) => runReaction(w, e, p, dmg, rdm, i));
+    consumeStatuses(e.st, consumedKeys(plans, w.ks.everlasting));
+    plans.forEach((p, i) => runReaction(w, e, p, dmg, rdm, i, depth));
   }
-  if (!e.dead) for (const s of shot.statuses) applyStatus(e, s);
-  burst(w, e.x, e.y, ELEMENT_COLOR[shot.element], 7, 130, 0.35, 2.2);
 }
 
-/** Reaction damage goes straight through damageEnemy, which never starts another reaction. */
-function reactionHit(w: World, o: Enemy, amount: number, element: Element): void {
-  if (amount > 0) damageEnemy(w, o, amount, element, false, { reaction: true });
+/** A shot's hit on `e`. Returns true if this hit killed it. */
+function applyHit(w: World, e: Enemy, shot: ResolvedShot, dmg: number): boolean {
+  const wasDead = e.dead;
+  resolveHit(w, e, shot.element, dmg, 0);
+  if (!e.dead) {
+    for (const s of shot.statuses) applyStatus(e, s);
+    if (w.ks.frostfire) for (const s of frostfireStatuses(shot.element)) applyStatus(e, s);
+  }
+  burst(w, e.x, e.y, ELEMENT_COLOR[shot.element], 7, 130, 0.35, 2.2);
+  return !wasDead && e.dead;
+}
+
+/** Reaction damage: reacts again (one level deeper) only with Cascade Core, else plain damage. */
+function reactionHit(w: World, o: Enemy, amount: number, element: Element, depth: number): void {
+  if (amount <= 0) return;
+  if (canReact(depth + 1, w.ks.chain_reaction)) resolveHit(w, o, element, amount, depth + 1);
+  else damageEnemy(w, o, amount, element, false, { reaction: true });
 }
 
 /** Feedback and area effects of one reaction on `e`. `hitDmg` is the triggering hit before multipliers. */
-function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: number, idx: number): void {
+function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: number, idx: number, depth: number): void {
   w.reactions++;
   floatText(w, e.x, e.y - e.r - 24 - idx * 16, p.name, p.color, 17, 1.1, true);
   addTrauma(w, 0.25);
@@ -99,7 +118,7 @@ function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: n
       w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.4, color: p.color });
       burst(w, x, y, p.color, 20, ex.radius * 2, 0.5, 2.8);
       const dmg = ex.damage * rdm;
-      for (const o of near(ex.radius, true)) reactionHit(w, o, dmg, 'fire');
+      for (const o of near(ex.radius, true)) reactionHit(w, o, dmg, 'fire', depth);
       break;
     }
     case 'spread':
@@ -114,8 +133,8 @@ function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: n
       for (const o of near(ex.radius, false)) {
         if (!o.st.wet) continue;
         w.arcs.push({ pts: lightningPoints(x, y, o.x, o.y), t: 0, max: 0.3, color: ELEMENT_COLOR.lightning });
-        reactionHit(w, o, dmg, 'lightning');
-        consumeStatuses(o.st, ['wet']);
+        reactionHit(w, o, dmg, 'lightning', depth);
+        if (!w.ks.everlasting) consumeStatuses(o.st, ['wet']);
       }
       break;
     }
@@ -123,7 +142,7 @@ function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: n
       w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.35, color: p.color });
       burst(w, x, y, p.color, 16, ex.radius * 2.2, 0.45, 2.6);
       const dmg = hitDmg * ex.frac * rdm;
-      for (const o of near(ex.radius, false)) reactionHit(w, o, dmg, 'lightning');
+      for (const o of near(ex.radius, false)) reactionHit(w, o, dmg, 'lightning', depth);
       break;
     }
   }
@@ -146,7 +165,8 @@ function lightningPoints(x1: number, y1: number, x2: number, y2: number): { x: n
 function onHit(w: World, p: PProj, e: Enemy): void {
   const shot = p.shot;
   p.hit.add(e.id);
-  applyHit(w, e, shot, shot.damage);
+  const kills: Enemy[] = [];
+  if (applyHit(w, e, shot, shot.damage)) kills.push(e);
   sfx(HIT_SFX[shot.element]);
 
   if (shot.aoeRadius > 0) {
@@ -159,7 +179,7 @@ function onHit(w: World, p: PProj, e: Enemy): void {
       if (o.dead || o === e) continue;
       if (Math.hypot(o.x - p.x, o.y - p.y) <= shot.aoeRadius + o.r) {
         p.hit.add(o.id);
-        applyHit(w, o, shot, shot.damage);
+        if (applyHit(w, o, shot, shot.damage)) kills.push(o);
       }
     }
   }
@@ -170,12 +190,32 @@ function onHit(w: World, p: PProj, e: Enemy): void {
     if (!next) break;
     p.hit.add(next.id);
     w.arcs.push({ pts: lightningPoints(cur.x, cur.y, next.x, next.y), t: 0, max: 0.3, color: ELEMENT_COLOR[shot.element] });
-    applyHit(w, next, shot, shot.damage * CHAIN_FALLOFF);
+    if (applyHit(w, next, shot, shot.damage * CHAIN_FALLOFF)) kills.push(next);
     cur = next;
+  }
+
+  if (canSplit(w.ks.death_split, !!p.shard)) {
+    const heading = Math.atan2(p.vy, p.vx);
+    for (const k of kills) spawnShards(w, p, k.x, k.y, heading);
   }
 
   if (p.pierceLeft > 0) p.pierceLeft--;
   else p.dead = true;
+}
+
+/** Hydra Sigil: two homing shards leave a kill point at +-30 degrees from the shot's heading. */
+function spawnShards(w: World, p: PProj, x: number, y: number, heading: number): void {
+  const shard = shardShot(p.shot);
+  const color = ELEMENT_COLOR[shard.element];
+  for (const a of shardHeadings(heading)) {
+    w.pprojs.push({
+      x, y, vx: Math.cos(a) * shard.speed, vy: Math.sin(a) * shard.speed,
+      r: Math.max(2, shard.size), shot: shard, hit: new Set(p.hit), pierceLeft: 0,
+      dead: false, age: 0, shard: true,
+    });
+  }
+  w.rings.push({ x, y, r: 3, maxR: 22, t: 0, max: 0.25, color });
+  burst(w, x, y, color, 6, 110, 0.3, 2);
 }
 
 export function updatePlayerProjectiles(w: World, dt: number): void {
