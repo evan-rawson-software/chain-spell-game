@@ -58,7 +58,8 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
 - Augments on branching runes apply only to descendants; a shared ancestor counts once.
   Terminal runes with `globals` affect every shot.
 - Stacking: `(base + flat) * (1 + sum(increased)) * product(1 + more)`.
-- Terminals fire depth-first, left-to-right, `stagger` seconds apart.
+- Terminals fire depth-first; siblings fire in `graph.nodes` order (the editor's top-to-bottom
+  order within a level, which the player can drag to change), `stagger` seconds apart.
 - Mana is a static build budget that grows automatically per cleared floor (`manaGain` in
   `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only (pick 2 of 5). Ward HP resets
   each floor.

@@ -454,7 +454,7 @@ export function compileSpell(graph: SpellGraph, catalog: RuneCatalog): CastPlan 
     order.push(uid);
     const kids = a.links
       .filter((l) => l.from.uid === uid)
-      .sort((x, y) => x.from.output - y.from.output || a.nodeIndex.get(x.toUid)! - a.nodeIndex.get(y.toUid)!);
+      .sort((x, y) => a.nodeIndex.get(x.toUid)! - a.nodeIndex.get(y.toUid)! || x.from.output - y.from.output);
     for (const l of kids) visit(l.toUid);
   };
   if (a.nodeIndex.has(graph.rootUid)) visit(graph.rootUid);

@@ -5,6 +5,7 @@ import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, newWorld, updateFx } from './m
 import { fireShot, updatePlayerProjectiles } from './projectiles';
 import { render, type HudState } from './render';
 import { createSpellStrip } from './spellstrip';
+import { sfx } from '../audio';
 
 
 type Phase = 'delay' | 'fight' | 'ending';
@@ -109,6 +110,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     waveT = 0;
     phase = 'fight';
     bannerT = BANNER_DUR;
+    sfx('waveStart');
   }
 
   /** Where the next cast should go: cursor if over the canvas, else nearest on-screen enemy, else null. */
@@ -163,6 +165,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
         wantFire = 0;
         lastCast = world.time;
         casts.push({ i: 0, t: 0 });
+        sfx('castFire');
       }
     }
     for (const c of casts) {

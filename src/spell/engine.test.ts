@@ -411,8 +411,8 @@ describe('compileSpell', () => {
     expect(plan.manaUsed).toBe(2 + 1 + 1);
   });
 
-  it('order: by output index then by node order, depth-first', () => {
-    // nodes listed so that frost (output 1) is before amp (output 0) in graph.nodes
+  it('order: by node (display) order then by output index, depth-first', () => {
+    // frost (fed by output 1) is listed before amp (output 0), so it fires first
     const g: SpellGraph = {
       rootUid: 'root',
       nodes: [
@@ -425,7 +425,10 @@ describe('compileSpell', () => {
         { from: { uid: 'a', output: 0 }, toUid: 'f', toInput: 0 },
       ],
     };
-    expect(compileSpell(g, CAT).shots.map((s) => s.sourceUid)).toEqual(['f', 'fr']);
+    expect(compileSpell(g, CAT).shots.map((s) => s.sourceUid)).toEqual(['fr', 'f']);
+    // reorder the level: amp before frost -> amp's subtree fires first
+    const g2: SpellGraph = { ...g, nodes: [g.nodes[0], g.nodes[2], g.nodes[1], g.nodes[3]] };
+    expect(compileSpell(g2, CAT).shots.map((s) => s.sourceUid)).toEqual(['f', 'fr']);
   });
 
   it('diamond merge counts shared ancestors once, and emits terminal once', () => {

@@ -4,6 +4,7 @@ import {
   type Enemy, type World,
 } from './model';
 import { damageTakenMul, moveMul, newStatus, tickStatus } from './status';
+import { sfx } from '../audio';
 
 export function spawnEnemy(w: World, kind: EnemyKind, hpScale: number, at?: { x: number; y: number }): Enemy {
   const cfg = ENEMY_CFG[kind];
@@ -37,6 +38,7 @@ export function damageEnemy(w: World, e: Enemy, base: number, element: Element, 
 function killEnemy(w: World, e: Enemy): void {
   e.dead = true;
   w.kills++;
+  sfx(e.kind === 'boss_lich' ? 'bossDie' : 'enemyDie');
   burst(w, e.x, e.y, e.cfg.color, e.kind === 'boss_lich' ? 60 : 16, e.kind === 'boss_lich' ? 300 : 140, 0.7, 3);
   w.rings.push({ x: e.x, y: e.y, r: e.r * 0.5, maxR: e.r * 1.8, t: 0, max: 0.35, color: e.cfg.color });
 }
@@ -47,6 +49,7 @@ export function damageWard(w: World, n: number): void {
   w.wardHp -= d;
   w.damageTaken += d;
   w.wardFlash = 0.25;
+  sfx('wardHit');
   floatText(w, WARD_X, WARD_Y - 50, '-' + Math.round(d), '#ff5a5a', 18, 1);
   burst(w, WARD_X, WARD_Y, '#ff5a5a', 8, 120, 0.4);
 }
@@ -63,6 +66,7 @@ function fireEnemyShots(w: World, e: Enemy): void {
     });
   }
   e.attackAnim = 0.25;
+  sfx('enemyShoot');
 }
 
 export function updateEnemies(w: World, dt: number, hpScale: number): void {

@@ -6,6 +6,7 @@ import {
   compileSpell, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
 } from '../spell';
 import { runeTooltip } from '../data/runes';
+import { sfx } from '../audio';
 
 const CARD_W = 190;
 const SOCK0 = 34;
@@ -76,7 +77,14 @@ function summarize(def: RuneDef): string {
   }
   for (const m of def.augments ?? []) parts.push(modText(m));
   for (const m of def.globals ?? []) parts.push(`all: ${modText(m)}`);
-  if (parts.length === 0) return def.outputs.length ? 'Splits / routes magic' : def.description.split(/[.\n]/)[0];
+  if (def.outputs.length) {
+    const outs = def.outputs.join(' \u00B7 ');
+    if (parts.length === 0) {
+      return def.inputs.length === 0 ? `Emits ${outs}` : `Splits ${def.inputs.join('+')} into ${def.outputs.join(', ')}`;
+    }
+    return `\u2192 ${outs} \u00B7 ${parts.slice(0, 2).join(' \u00B7 ')}`;
+  }
+  if (parts.length === 0) return def.description.split(/[.\n]/)[0];
   return parts.slice(0, 3).join(' \u00B7 ');
 }
 function fmt(n: number): string {
@@ -134,17 +142,49 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     notice = null;
   }
 
+  // ---------------------------------------------------------- undo / redo
+  const HISTORY_CAP = 100;
+  const undoStack: SpellGraph[] = [];
+  const redoStack: SpellGraph[] = [];
+  let undoBtn: HTMLButtonElement | null = null;
+  let redoBtn: HTMLButtonElement | null = null;
+  function syncHistoryButtons(): void {
+    if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  }
+
   function applyGraph(g: SpellGraph): void {
+    if (g === graph) return;
+    undoStack.push(graph);
+    if (undoStack.length > HISTORY_CAP) undoStack.shift();
+    redoStack.length = 0;
     graph = g;
+    syncHistoryButtons();
     opts.onChange(g);
   }
+
+  function stepHistory(from: SpellGraph[], to: SpellGraph[]): void {
+    const g = from.pop();
+    if (!g) return;
+    to.push(graph);
+    graph = g;
+    clearSelection();
+    sfx('undo');
+    syncHistoryButtons();
+    opts.onChange(g);
+    render();
+  }
+  const undo = (): void => stepHistory(undoStack, redoStack);
+  const redo = (): void => stepHistory(redoStack, undoStack);
 
   function removeNode(uid: string): void {
     if (uid === graph.rootUid) return;
     try {
       applyGraph(removeRune(graph, uid));
+      sfx('runeRemove');
     } catch (err) {
       notice = { text: String(err instanceof Error ? err.message : err), kind: 'warn' };
+      sfx('uiError');
     }
     if (selectedNode) selectedNode = null;
     selectedInv = null;
@@ -168,7 +208,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     return b;
   };
   const zoomAtCenter = (f: number): void => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, view.scale * f);
+  undoBtn = mkBtn('\u21B6', 'Undo (Ctrl+Z)', undo);
+  redoBtn = mkBtn('\u21B7', 'Redo (Ctrl+Shift+Z / Ctrl+Y)', redo);
   controls.append(
+    undoBtn, redoBtn, h('span', 're-ctl-sep'),
     mkBtn('−', 'Zoom out', () => zoomAtCenter(1 / 1.25)),
     zoomLabel,
     mkBtn('+', 'Zoom in', () => zoomAtCenter(1.25)),
@@ -366,6 +409,109 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     return card;
   }
 
+  // ---------------------------------------------------------- reorder within a level
+  let cardDragged = false;
+
+  /** Move `uid` to position `idx` among the nodes of its level; links are untouched. */
+  function reorderWithinLevel(g: SpellGraph, uid: string, lv: Record<string, number>, idx: number): SpellGraph {
+    const level = lv[uid] ?? 0;
+    const peers = g.nodes.filter((n) => (lv[n.uid] ?? 0) === level);
+    const moving = peers.find((n) => n.uid === uid);
+    if (!moving) return g;
+    const order = peers.filter((n) => n.uid !== uid);
+    order.splice(Math.max(0, Math.min(order.length, idx)), 0, moving);
+    if (order.every((n, i) => n.uid === peers[i].uid)) return g;
+    let k = 0;
+    const nodes = g.nodes.map((n) => ((lv[n.uid] ?? 0) === level ? order[k++] : n));
+    return { ...g, nodes };
+  }
+
+  function attachReorder(
+    card: HTMLElement, uid: string, lv: Record<string, number>,
+    pos: Map<string, { x: number; y: number; def: RuneDef }>, world: HTMLElement,
+  ): void {
+    const me = pos.get(uid);
+    if (!me) return;
+    const level = lv[uid] ?? 0;
+    const peers = graph.nodes.filter((n) => n.uid !== uid && (lv[n.uid] ?? 0) === level && pos.has(n.uid));
+    if (peers.length === 0) return; // nothing to reorder against
+    const myH = nodeHeight(me.def);
+    let start: { x: number; y: number; id: number } | null = null;
+    let active = false;
+    let indicator: HTMLElement | null = null;
+    const targetOf = (dy: number): number => {
+      const c = me.y + dy / view.scale + myH / 2;
+      let i = 0;
+      for (const p of peers) {
+        const pp = pos.get(p.uid)!;
+        if (pp.y + nodeHeight(pp.def) / 2 < c) i++;
+      }
+      return i;
+    };
+    const reset = (): void => {
+      start = null;
+      active = false;
+      indicator?.remove();
+      indicator = null;
+      card.classList.remove('re-dragging');
+      card.style.transform = '';
+    };
+    card.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.target instanceof Element && e.target.closest('.re-x'))) return;
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dy = e.clientY - start.y;
+      if (!active) {
+        if (Math.hypot(e.clientX - start.x, dy) < 5) return;
+        active = true;
+        cardDragged = true;
+        hideTip();
+        try { card.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+        card.classList.add('re-dragging');
+        indicator = h('div', 're-drop');
+        indicator.style.left = `${me.x - 8}px`;
+        indicator.style.width = `${CARD_W + 16}px`;
+        world.appendChild(indicator);
+      }
+      card.style.transform = `translateY(${dy / view.scale}px)`;
+      const target = targetOf(dy);
+      const before = peers[target - 1];
+      const after = peers[target];
+      let y: number;
+      if (before) { const b = pos.get(before.uid)!; y = b.y + nodeHeight(b.def) + ROW_GAP / 2; }
+      else if (after) y = pos.get(after.uid)!.y - ROW_GAP / 2;
+      else y = me.y;
+      indicator!.style.top = `${y - 2}px`;
+    });
+    card.addEventListener('pointerup', (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const was = active;
+      const idx = was ? targetOf(e.clientY - start.y) : 0;
+      reset();
+      if (!was) return;
+      setTimeout(() => { cardDragged = false; }, 0);
+      const ng = reorderWithinLevel(graph, uid, lv, idx);
+      if (ng !== graph) {
+        const before = validateSpell(graph, catalog, opts.maxMana).errors.length;
+        const after = validateSpell(ng, catalog, opts.maxMana).errors.length;
+        if (after > before) {
+          notice = { text: 'That order makes the spell invalid.', kind: 'warn' };
+          sfx('uiError');
+        } else {
+          applyGraph(ng);
+          sfx('runePlace');
+        }
+      }
+      render();
+    });
+    card.addEventListener('pointercancel', () => {
+      if (active) setTimeout(() => { cardDragged = false; }, 0);
+      reset();
+    });
+  }
+
   function bezier(x1: number, y1: number, x2: number, y2: number): string {
     const dx = Math.max(40, Math.abs(x2 - x1) / 2);
     return `M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}`;
@@ -517,8 +663,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
         x.addEventListener('click', (e) => { e.stopPropagation(); removeNode(n.uid); });
         card.appendChild(x);
       }
+      if (!isRoot) attachReorder(card, n.uid, levels, pos, world);
       card.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (cardDragged) return;
         selectedInv = null;
         selectedNode = selectedNode === n.uid ? null : n.uid;
         notice = null;
@@ -547,8 +695,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
             selectedNode = null;
             notice = null;
             applyGraph(ng);
+            sfx('runePlace');
           } catch (err) {
             notice = { text: String(err instanceof Error ? err.message : err), kind: 'warn' };
+            sfx('uiError');
           }
           render();
         });
@@ -563,6 +713,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const hintItems: [string, string][] = [
       ['Place', 'click a rune in the inventory, then a ghost slot'],
       ['Remove', 'right-click a placed rune or hit its \u00D7'],
+      ['Reorder', 'drag a rune up/down its level (sets firing order)'],
+      ['Undo', 'Ctrl+Z'],
       ['Cancel', 'Esc'],
     ];
     for (const [k, v] of hintItems) {
@@ -710,6 +862,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
           selectedNode = null;
           notice = null;
           selectedInv = selectedInv === o.uid ? null : o.uid;
+          if (selectedInv) sfx('runePick');
           render();
         });
         grid.appendChild(card);
@@ -730,6 +883,16 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     }
   });
   const onKey = (e: KeyboardEvent): void => {
+    const t = e.target;
+    const typing = t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+    if (!typing && (e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'z' || k === 'y') {
+        e.preventDefault();
+        if (k === 'y' || e.shiftKey) redo(); else undo();
+        return;
+      }
+    }
     if (e.key === 'Escape' && (selectedInv || selectedNode || notice)) {
       clearSelection();
       render();
@@ -737,6 +900,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   };
   document.addEventListener('keydown', onKey);
 
+  syncHistoryButtons();
   render();
 
   return {

@@ -59,7 +59,8 @@ When the spell is cast:
    affects **only its descendants**, never sibling branches.
    Exception: some **global terminal runes** affect the whole spell (e.g. "Catalyst: all Fire
    terminals +20%"). Global effects are applied to every terminal after its own ancestor augments.
-4. Terminals fire **in sequence**: **[default]** depth-first, left-to-right order, with a short
+4. Terminals fire **in sequence**: **[default]** depth-first, following the order runes are
+   stacked in each level of the editor (drag a rune to reorder its level), with a short
    stagger (~0.1 s) between them, so order-dependent combos are possible (apply Wet, then
    Lightning).
 

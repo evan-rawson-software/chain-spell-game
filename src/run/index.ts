@@ -3,6 +3,7 @@ import { compileSpell, validateSpell } from '../spell';
 import { CATALOG, ROOT_UID, SOURCE_ID, runeTooltip } from '../data/runes';
 import { mountEditor } from '../editor';
 import { mountBattle } from '../battle';
+import { isMuted, setMuted, sfx, type SfxName } from '../audio';
 import { COLOR_HEX } from '../types';
 import type { BattleResult, Reward, RunState, RuneDef, SpellGraph } from '../types';
 import { FLOOR_COUNT, floorDef } from './floors';
@@ -26,9 +27,9 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-function button(label: string, cls: string, onClick: () => void, parent?: HTMLElement): HTMLButtonElement {
+function button(label: string, cls: string, onClick: () => void, parent?: HTMLElement, sound: SfxName = 'uiClick'): HTMLButtonElement {
   const b = el('button', cls, label, parent);
-  b.addEventListener('click', onClick);
+  b.addEventListener('click', () => { sfx(sound); onClick(); });
   return b;
 }
 
@@ -220,6 +221,7 @@ export function startApp(root: HTMLElement): void {
   // ------------------------------------------------------------ Reward
   function rewardScreen(): void {
     saveRun(run, 'reward');
+    sfx('floorClear');
     show((s) => {
       s.classList.add('rn-center');
       const f = floorDef(run.floor);
@@ -279,6 +281,7 @@ export function startApp(root: HTMLElement): void {
         const idx = cardEls.length;
         cardEls.push(card);
         card.addEventListener('click', () => {
+          sfx('rewardSelect');
           const at = selected.indexOf(idx);
           if (at >= 0) selected.splice(at, 1);
           else { selected.push(idx); if (selected.length > REWARD_PICKS) selected.shift(); }
@@ -289,7 +292,7 @@ export function startApp(root: HTMLElement): void {
       const actions = el('div', 'rn-actions', undefined, box);
       const confirm = button('', 'rn-btn primary big', () => {
         pick(selected.map((i) => rewards[i]).filter((r): r is Reward => !!r));
-      }, actions);
+      }, actions, 'rewardTake');
       button('Skip', 'rn-btn', () => pick([]), actions);
       refresh();
     });
@@ -312,6 +315,7 @@ export function startApp(root: HTMLElement): void {
 
   function endScreen(titleText: string, cls: string, cleared: number): void {
     clearRun();
+    sfx(cls === 'win' ? 'runVictory' : 'runDefeat');
     show((s) => {
       s.classList.add('rn-center');
       const box = el('div', 'rn-title', undefined, s);
@@ -325,6 +329,22 @@ export function startApp(root: HTMLElement): void {
 
   function victory(): void { endScreen('Victory!', 'win', FLOOR_COUNT); }
   function defeat(): void { endScreen('Defeated', 'lose', run.floor - 1); }
+
+  // Mute toggle: lives on <body> so it survives screen changes.
+  const muteBtn = document.createElement('button');
+  muteBtn.className = 'rn-mute';
+  const syncMute = (): void => {
+    muteBtn.textContent = isMuted() ? '\u{1F507}' : '\u{1F50A}';
+    muteBtn.title = isMuted() ? 'Sound off (click to unmute)' : 'Sound on (click to mute)';
+    muteBtn.setAttribute('aria-label', muteBtn.title);
+  };
+  muteBtn.addEventListener('click', () => {
+    setMuted(!isMuted());
+    syncMute();
+    sfx('uiClick');
+  });
+  syncMute();
+  document.body.appendChild(muteBtn);
 
   title();
 }

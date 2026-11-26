@@ -1,5 +1,6 @@
 import type { Element, StatusApplication } from '../types';
 import type { Enemy, StatusState } from './model';
+import { sfx } from '../audio';
 
 export function newStatus(): StatusState {
   return { burn: null, poison: [], slow: null, freeze: 0, wet: null, weaken: null };
@@ -21,6 +22,7 @@ export function applyStatus(e: Enemy, a: StatusApplication): void {
       break;
     case 'freeze':
       st.freeze = Math.max(st.freeze, dur * e.cfg.freezeMul);
+      sfx('freeze');
       break;
     case 'wet':
       st.wet = { p: Math.max(st.wet?.p ?? 0, a.potency), t: dur };

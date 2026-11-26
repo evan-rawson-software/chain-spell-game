@@ -1,10 +1,21 @@
-import type { ResolvedShot } from '../types';
+import type { Element, ResolvedShot } from '../types';
+import type { SfxName } from '../audio';
 import { damageEnemy } from './enemies';
 import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, burst, type Enemy, type PProj, type World } from './model';
 import { applyStatus } from './status';
+import { sfx } from '../audio';
 
 const CHAIN_RANGE = 200;
 const CHAIN_FALLOFF = 0.75;
+
+const SHOT_SFX: Record<Element, SfxName> = {
+  fire: 'shotFire', frost: 'shotFrost', nature: 'shotNature', lightning: 'shotLightning',
+  arcane: 'shotArcane', storm: 'shotStorm', pure: 'shotPure',
+};
+const HIT_SFX: Record<Element, SfxName> = {
+  fire: 'hitFire', frost: 'hitFrost', nature: 'hitNature', lightning: 'hitLightning',
+  arcane: 'hitArcane', storm: 'hitStorm', pure: 'hitPure',
+};
 
 /** Spawn all projectiles of one shot, aimed at (tx, ty). */
 export function fireShot(w: World, shot: ResolvedShot, tx: number, ty: number): void {
@@ -21,6 +32,7 @@ export function fireShot(w: World, shot: ResolvedShot, tx: number, ty: number): 
     });
   }
   burst(w, MUZZLE_X, MUZZLE_Y, ELEMENT_COLOR[shot.element], 6, 90, 0.3, 2);
+  sfx(SHOT_SFX[shot.element]);
 }
 
 function nearest(w: World, x: number, y: number, exclude: Set<number>, maxDist = Infinity): Enemy | null {
@@ -58,8 +70,10 @@ function onHit(w: World, p: PProj, e: Enemy): void {
   const shot = p.shot;
   p.hit.add(e.id);
   applyHit(w, e, shot, shot.damage);
+  sfx(HIT_SFX[shot.element]);
 
   if (shot.aoeRadius > 0) {
+    sfx('explosion');
     const color = ELEMENT_COLOR[shot.element];
     w.rings.push({ x: p.x, y: p.y, r: 4, maxR: shot.aoeRadius, t: 0, max: 0.35, color });
     burst(w, p.x, p.y, color, 14, shot.aoeRadius * 2, 0.45, 2.5);
