@@ -2,8 +2,9 @@
   display: flex; height: 100%; min-height: 0; width: 100%;
   background: var(--bg); color: var(--text); overflow: hidden;
 }
+.re-main { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
 .re-canvas {
-  position: relative; flex: 1 1 auto; min-width: 0; overflow: hidden;
+  position: relative; flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden;
   cursor: grab; touch-action: none; user-select: none;
   --gx: 0px; --gy: 0px; --gs: 26px;
   background:
@@ -223,3 +224,15 @@
 .re-keystones { border-color: #9b6bff; background: rgba(155, 107, 255, 0.08); }
 .re-keystone-row { display: flex; flex-direction: column; gap: 1px; padding: 5px 0; font-size: 12px; }
 .re-keystone-row b { color: #c7aaff; font-weight: 600; }
+
+/* Practice pane */
+.re-ctl-practice { font-size: 13px; white-space: nowrap; }
+.re-ctl-practice.active { background: var(--accent); color: #14111d; border-color: var(--accent); }
+.re-divider { flex: 0 0 4px; background: #3a3352; box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.35); }
+.re-practice { position: relative; flex: 0 0 40%; min-height: 0; overflow: hidden; background: #0d0a14; }
+.re-practice-mount { position: absolute; inset: 0; }
+.re-practice-msg {
+  position: absolute; left: 50%; top: 10px; transform: translateX(-50%); z-index: 5; max-width: 90%;
+  padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600; text-align: center;
+  color: #ff9aa3; background: #2a1620; border: 1px solid var(--danger); pointer-events: none;
+}

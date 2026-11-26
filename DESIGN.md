@@ -105,6 +105,47 @@ further reactions, and is scaled by the reaction-damage battle mod.
 
 The existing Wet bonus to lightning still applies to the triggering hit.
 
+### Shot timing
+Within one cast, a shot never overtakes the shot fired before it: its speed is capped at the
+previous shot's (already capped) speed. The editor order therefore decides which shot lands first,
+so a combo like Frost Bolt → Fireball reliably Melts. Echo volleys count as a separate cast;
+Hydra shards are exempt.
+
+### Enemies
+| Enemy | Question it asks | Rule |
+|---|---|---|
+| Shield Bearer | Many small hits? | A shield absorbs the first hit completely (one projectile, blast or arc). It regrows after 4 s without being hit. Damage over time ignores the shield. |
+| Splitter | Area damage? | Splits into 3 Splitlings on death (small, fast, low HP). |
+| Cleanser | Burst it first? | Stops at range; every 4 s strips all statuses from enemies within 150 (visible pulse). |
+| Armored | Freeze or weaken it? | Takes 60% less damage unless it is frozen or weakened. |
+| Swarmer | Pierce / chain? | Arrives in packs of 8–12; tiny, fast, 12 HP. |
+
+### Elite traits
+Every elite floor rolls one trait for its elite enemies, shown on the map before you pick:
+Hasted (+40% speed), Reflective (15% of damage taken hits the ward, max 5 per hit),
+Regenerating (heals 2% max HP/s after 2 s without being hit), Burn-immune (no burn, fire −50%).
+
+### Bosses
+Each run picks one boss from the seed; the map shows which.
+- **Lich King:** ranged volleys and summons (the original boss).
+- **Stone Golem:** slow melee; its shell cuts damage by 75%. A Shatter, Combust or Overload on it
+  breaks the shell for 6 s. Every 8 s it stomps, sending a shockwave that damages the ward.
+- **Hydra:** at 66% and 33% HP it grows 2 Hydra Heads (stationary spitters, 15% of the boss's
+  max HP each).
+
+### Hazards
+Some battle floors (row 3+, ~30%, seeded per node) carry a hazard, shown on the map:
+- **Rain:** every enemy is permanently Wet; fire damage −25%.
+- **Heatwave:** every 5 s all enemies start Burning (3 dps, 3 s); slows are half as strong.
+- **Fog:** enemies beyond x = 650 are hidden until hit; auto-aim only targets visible enemies.
+
+### Practice range
+A **Practice** toggle in the editor splits the canvas: the graph on top, a practice arena below.
+Three training dummies (one strafes slowly) with huge HP that refills, statuses shown. The spell
+auto-fires (at the cursor if over the arena, else the nearest dummy) and updates on every edit.
+Shows damage per second (last 5 s), reaction callouts and a per-shot damage tally. Nothing
+attacks the ward, so Momentum keeps climbing.
+
 ### Keystones
 Rare terminal runes that fire nothing and change a combat rule instead of adding numbers.
 Several copies of the same keystone in one spell count once.
@@ -154,9 +195,37 @@ Several copies of the same keystone in one spell count once.
 | **Shop** | Spend gold: 5 runes for sale, a forge service, and removing a curse. Purchases persist. |
 | **Forge** | Upgrade one owned rune for free. |
 | **Shrine** | Pick 1 of 2 blessings, **or** take a Dark Bargain: a random curse plus a random rare rune and gold. |
+| **Event (?)** | A short choice with a tradeoff (see Events). |
+| **Treasure** | Pick 1 of 3 rare runes; at least one is a keystone. |
+| **Rest** | +10 max ward HP, **or** forge one rune for free. |
 | **Boss** | Final fight. Winning ends the run in victory. |
 
-- Shop, forge and shrine nodes grant +1 max mana when left. Gold starts at 20.
+- Map weights add event 10, treasure 4 and rest 6 (treasure and rest from row 3; the row-9 rest
+  row may hold shop, forge, shrine or rest).
+- Battle and elite nodes preview their featured enemy, hazard and elite trait; the boss node shows
+  the run's boss. Each battle node features one enemy type unlocked by its row (Shield Bearer and
+  Swarmer from row 2, Splitter from row 3, Armored and Cleanser from row 4) mixed into its waves.
+- Non-combat nodes (shop, forge, shrine, event, treasure, rest) grant +1 max mana when left. Gold
+  starts at 20.
+- **Reward reroll:** once per reward screen, pay 15 gold (× price boons) to reroll the rune cards.
+- **Shop extras:** sell a rune (common/starter 15, uncommon 25, rare 40, +10 if forged), or
+  transmute two runes of the same rarity into a random rune one rarity higher (two rares → a
+  random rare or keystone).
+
+### Events
+Seeded per node. Each offers its choice or Leave.
+- **Wounded Mage:** pay half your gold (min 10) for a random uncommon or rare rune.
+- **Rune Altar:** sacrifice a rune to forge two other random unforged runes.
+- **Cursed Tome:** take a random curse to forge every rune in your spell.
+- **Wandering Merchant:** trade a rune for a random rune one rarity higher.
+- **Gambler's Dice:** pay 25 gold; 50% chance to win 60.
+- **Fountain:** +15 max ward HP, or remove a random curse.
+
+### Daily seed and run summary
+- **Daily run** on the title screen: the seed comes from today's local date, so everyone gets the
+  same map, bosses and offers that day. The top bar marks it as daily.
+- The end screen (victory or defeat) shows the final spell graph, damage dealt per rune, reactions
+  by type, and run totals (battles, kills, best hit, gold, boons, seed or daily date).
 - **[default]** Prices: common 30, uncommon 50, rare 80, forge 40, remove curse 50 (all × price boons).
 
 ### Forge

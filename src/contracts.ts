@@ -13,7 +13,7 @@
  *                           `export const NEUTRAL_MODS: BattleMods`,
  *                           `export function combineBoons(ids: string[]): BoonTotals`
  *   src/editor/index.ts  -> `export const mountEditor: MountEditor`
- *   src/battle/index.ts  -> `export const mountBattle: MountBattle`
+ *   src/battle/index.ts  -> `export const mountBattle: MountBattle`, `export const mountPractice: MountPractice`
  *   src/run/index.ts     -> run flow + screens; `export function startApp(root: HTMLElement): void`
  *   src/audio/index.ts   -> `sfx(name, opts?)`, `setMuted`, `isMuted` (any module may play sounds)
  */
@@ -122,3 +122,18 @@ export interface BattleHandle {
 }
 
 export type MountBattle = (container: HTMLElement, opts: BattleOptions) => BattleHandle;
+
+/** Practice range: the spell auto-fires at training dummies; nothing attacks, nothing ends. */
+export interface PracticeOptions {
+  plan: CastPlan;
+  graph: SpellGraph;
+  catalog: RuneCatalog;
+}
+
+export interface PracticeHandle {
+  /** Swap in a recompiled spell (called on every editor change). */
+  setSpell(plan: CastPlan, graph: SpellGraph): void;
+  destroy(): void;
+}
+
+export type MountPractice = (container: HTMLElement, opts: PracticeOptions) => PracticeHandle;

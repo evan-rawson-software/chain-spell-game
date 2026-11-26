@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CATALOG } from '../data/runes';
 import { REWARD_OFFER, goldReward, rollBoons, rollRewards } from './rewards';
 import { createRng } from './rng';
 import { floorDef } from './floors';
@@ -76,5 +77,19 @@ describe('goldReward / rollBoons', () => {
       expect(r.every((x) => x.kind === 'blessing')).toBe(true);
     }
     expect(rollBoons('curse', ['x'], createRng(1), 1, boons)).toHaveLength(0);
+  });
+});
+
+import { treasureOffers } from './rewards';
+
+describe('treasureOffers', () => {
+  it('offers 3 distinct rares with at least one keystone, deterministically', () => {
+    for (let s = 0; s < 100; s++) {
+      const o = treasureOffers(s, 'r4c1');
+      expect(o).toEqual(treasureOffers(s, 'r4c1'));
+      expect(new Set(o.map((r) => r.defId)).size).toBe(3);
+      for (const r of o) expect(CATALOG[r.defId].rarity).toBe('rare');
+      expect(o.some((r) => CATALOG[r.defId].keystone)).toBe(true);
+    }
   });
 });

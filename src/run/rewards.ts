@@ -1,7 +1,7 @@
 import { BOONS } from '../data/boons';
 import { CATALOG, SOURCE_ID } from '../data/runes';
 import type { BoonDef, FloorDef, Reward, Rarity, RuneCatalog, MapNodeKind } from '../types';
-import type { Rng } from './rng';
+import { createRng, type Rng } from './rng';
 
 type DropRarity = Exclude<Rarity, 'starter'>;
 
@@ -58,4 +58,20 @@ export function nodeSeed(seed: number, id: string, salt = 0): number {
   let h = (seed ^ Math.imul(salt + 1, 0x9e3779b1)) >>> 0;
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0;
   return h;
+}
+
+/** Reward reroll: base gold price (times price boons); the reroll uses its own seed salt. */
+export const REROLL_COST = 15;
+export const REROLL_SALT = 50;
+
+/** Treasure: 3 distinct rare runes, at least one of them a keystone, in a seeded order. */
+export function treasureOffers(seed: number, id: string, catalog: RuneCatalog = CATALOG): Reward[] {
+  const rng = createRng(nodeSeed(seed, id, 60));
+  const rares = Object.values(catalog).filter((d) => d.rarity === 'rare' && d.id !== SOURCE_ID);
+  const keystones = rares.filter((d) => d.keystone);
+  const picked = keystones.length ? [keystones.splice(rng.int(keystones.length), 1)[0]] : [];
+  const rest = rares.filter((d) => !picked.includes(d));
+  while (picked.length < 3 && rest.length) picked.push(rest.splice(rng.int(rest.length), 1)[0]);
+  for (let i = picked.length - 1; i > 0; i--) { const j = rng.int(i + 1); [picked[i], picked[j]] = [picked[j], picked[i]]; }
+  return picked.map((d) => ({ kind: 'rune', defId: d.id }));
 }

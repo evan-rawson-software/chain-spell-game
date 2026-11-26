@@ -146,7 +146,7 @@
 .rn-legend-glyph { flex: 0 0 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; background: var(--panel-2); border: 2px solid var(--k, #9a93b3); color: var(--k, #cfd3f0); }
 .rn-legend-name { font-size: 13px; font-weight: 700; }
 .rn-legend-desc { font-size: 11px; line-height: 1.35; color: var(--muted); }
-.battle { --k: #cfd3f0; } .elite { --k: #f5a623; } .shop { --k: #f5c518; } .forge { --k: #ff8a4c; } .shrine { --k: #4fd1c5; } .boss { --k: #ff5d6c; }
+.battle { --k: #cfd3f0; } .elite { --k: #f5a623; } .shop { --k: #f5c518; } .forge { --k: #ff8a4c; } .shrine { --k: #4fd1c5; } .boss { --k: #ff5d6c; } .event { --k: #c792ff; } .treasure { --k: #6fe3a8; } .rest { --k: #8ecbff; }
 .rn-maprow { fill: #5d567a; font-size: 11px; }
 .rn-edge { stroke: #3a3352; stroke-width: 2; }
 .rn-edge.open { stroke: #8b7ad6; stroke-width: 2.5; }
@@ -209,3 +209,38 @@
 .rn-school { flex: 1 1 165px; min-width: 165px; max-width: 220px; padding: 14px; min-height: 0; }
 .rn-forgeprev { width: 100%; flex-wrap: nowrap; }
 .rn-forgeprev .rn-card { flex: 0 1 210px; min-width: 150px; }
+
+/* ---- event / treasure / rest / shop extras / summary ---- */
+.rn-warn { color: #ffd1d5; background: rgba(255,93,108,.15); border: 1px solid var(--danger); border-radius: 8px; padding: 6px 12px; font-size: 13px; max-width: 520px; text-align: center; }
+.rn-stchip.daily { color: #4fd1c5; border-color: #2a7f78; }
+.rn-event { max-width: 640px; }
+.rn-event-text { color: var(--muted); font-size: 15px; line-height: 1.5; text-align: center; margin: 0; }
+.rn-choices { display: flex; flex-direction: column; gap: 8px; align-items: center; width: 100%; }
+.rn-choice { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.rn-choice-note { font-size: 12px; color: var(--muted); }
+.rn-outcome { background: var(--panel); border: 1px solid #4a4266; border-radius: 12px; padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; max-width: 520px; text-align: center; font-size: 15px; line-height: 1.45; }
+.rn-outcome .head { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); }
+
+/* map previews */
+.rn-legend > * { flex-shrink: 0; }
+.rn-detail { background: var(--panel-2); border: 1px solid #3a3352; border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; min-height: 64px; }
+.rn-detail-name { font-size: 14px; font-weight: 700; color: var(--k, var(--text)); }
+.rn-detail-line { font-size: 11px; line-height: 1.35; color: var(--muted); }
+.rn-detail-line b { color: var(--text); }
+.rn-mn .badge circle { fill: #120f22; stroke: var(--accent); stroke-width: 1.5; }
+.rn-mn .badge text { fill: #e6e0ff; font-size: 9px; pointer-events: none; user-select: none; }
+.rn-mn .bosslabel { fill: var(--danger); font-size: 10px; pointer-events: none; }
+
+/* run summary */
+.rn-sumscroll { width: 100%; max-width: 760px; display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+.rn-sumcard.compact { padding: 12px 16px; gap: 10px; }
+.rn-sumhead { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); text-align: left; }
+.rn-spellsvg { max-width: 100%; height: auto; max-height: 200px; display: block; margin: 0 auto; }
+.rn-spellsvg text { fill: var(--text); font-size: 11px; }
+.rn-dmgrow { display: grid; grid-template-columns: 130px 1fr 56px; gap: 8px; align-items: center; font-size: 12px; text-align: left; }
+.rn-dmgbar { height: 10px; background: var(--panel-2); border-radius: 5px; overflow: hidden; }
+.rn-dmgbar > i { display: block; height: 100%; background: var(--accent); }
+.rn-dmgval { text-align: right; color: var(--muted); }
+.rn-stats.wrap { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.rn-stats.wrap .rn-statbox { padding: 6px 4px; }
+.rn-stats.small .rn-statval { font-size: 20px; }

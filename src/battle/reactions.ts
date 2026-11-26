@@ -1,4 +1,4 @@
-import type { Element } from '../types';
+import type { Element, ReactionKind } from '../types';
 import type { StatusState } from './model';
 
 /**
@@ -7,8 +7,7 @@ import type { StatusState } from './model';
  * returns what should happen; projectiles.ts executes the plan.
  */
 
-export type ReactionKind =
-  | 'shatter' | 'melt' | 'steam' | 'combust' | 'wildfire' | 'electrocute' | 'overload' | 'unravel';
+export type { ReactionKind };
 
 export type StatusKey = 'burn' | 'poison' | 'slow' | 'freeze' | 'wet' | 'weaken';
 

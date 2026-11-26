@@ -3,21 +3,22 @@ import { sfx } from '../../audio';
 import type { Reward } from '../../types';
 import type { App } from '../app';
 import { floorDef } from '../floors';
-import { ELITE_BLESSINGS, REWARD_OFFER, REWARD_PICKS, goldReward, nodeSeed, rollBoons, rollRewards } from '../rewards';
+import { ELITE_BLESSINGS, REROLL_COST, REROLL_SALT, REWARD_OFFER, REWARD_PICKS, goldReward, nodeSeed, rollBoons, rollRewards } from '../rewards';
 import { createRng } from '../rng';
-import { addBoon, addGold, applyReward, manaGain } from '../state';
+import { addBoon, addGold, applyReward, manaGain, spendGold } from '../state';
 import { boonCard, button, el, fmtTime, rowLabel, runeCard } from '../ui';
 
-export function rewardScreen(app: App): void {
+export function rewardScreen(app: App, fresh = true): void {
   app.save('reward');
-  sfx('floorClear');
+  if (fresh) sfx('floorClear');
   const node = app.node();
   if (!node) { app.goto.map(); return; }
   app.show((s) => {
     s.classList.add('rn-center');
     const totals = app.totals();
-    const f = floorDef(node.row, node.kind);
-    const rewards = rollRewards(f, createRng(nodeSeed(app.run.seed, node.id)), REWARD_OFFER + totals.rewardOffer);
+    const f = floorDef(node.row, node.kind, node.id, app.run.seed);
+    const rewards = rollRewards(f, createRng(nodeSeed(app.run.seed, node.id, app.ns.rerolled ? REROLL_SALT : 0)), REWARD_OFFER + totals.rewardOffer);
+    const rerollCost = Math.round(REROLL_COST * totals.priceMul);
     const gold = Math.round(goldReward(node.kind, node.row) * totals.goldMul);
     const box = el('div', 'rn-rewardbox', undefined, s);
     el('h2', 'rn-h2', `${rowLabel(node.row)} cleared`, box);
@@ -66,6 +67,15 @@ export function rewardScreen(app: App): void {
     });
     const counter = el('div', 'rn-counter', undefined, box);
     const actions = el('div', 'rn-actions', undefined, box);
+    const reroll = button(app.ns.rerolled ? 'Rerolled' : `Reroll runes ● ${rerollCost}`, 'rn-btn', () => {
+      app.setRun(spendGold(app.run, rerollCost));
+      app.ns = { ...app.ns, rerolled: true };
+      app.save('reward'); // persist before re-render so a reload keeps the new set and the spent flag
+      sfx('buy');
+      rewardScreen(app, false);
+    }, actions, 'coin');
+    reroll.disabled = !!app.ns.rerolled || app.run.gold < rerollCost;
+    reroll.title = app.ns.rerolled ? 'Already rerolled on this screen' : app.run.gold < rerollCost ? 'Not enough gold' : 'Replace the rune cards (once per reward screen)';
     const confirm = button('', 'rn-btn primary big', () => {
       let run = app.run;
       for (const i of selected) { const r = rewards[i] as Reward | undefined; if (r) run = applyReward(run, r); }

@@ -1,7 +1,7 @@
 import { COLOR_HEX } from '../../types';
 import type { App } from '../app';
 import { MAP_ROWS } from '../map';
-import { loadRun } from '../state';
+import { loadRun, todayString } from '../state';
 import { button, el } from '../ui';
 
 export function titleScreen(app: App): void {
@@ -33,9 +33,13 @@ export function titleScreen(app: App): void {
         app.setRun(saved.run);
         app.visited = saved.visited;
         app.sold = saved.sold;
+        app.ns = saved.ns;
         app.goto.resume(saved.phase);
       }, row);
     }
-    button('New Run', saved ? 'rn-btn' : 'rn-btn primary', () => app.goto.school(), row);
+    button('New Run', saved ? 'rn-btn' : 'rn-btn primary', () => { app.dailyPending = null; app.goto.school(); }, row);
+    const today = todayString();
+    const daily = button(`Daily run (${today})`, 'rn-btn', () => { app.dailyPending = today; app.goto.school(); }, row);
+    daily.title = 'Everyone gets the same seed today: same map, bosses and offers. You still pick your school.';
   });
 }

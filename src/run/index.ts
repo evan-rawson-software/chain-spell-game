@@ -4,6 +4,9 @@ import { isMuted, setMuted, sfx } from '../audio';
 import type { BattleResult, MapNode, RunState } from '../types';
 import type { App, Cleanup } from './app';
 import { endScreen } from './screens/end';
+import { eventScreen } from './screens/event';
+import { restScreen } from './screens/rest';
+import { treasureScreen } from './screens/treasure';
 import { forgeScreen } from './screens/forge';
 import { mapScreen } from './screens/map';
 import { battleScreen, prepareScreen } from './screens/prepare';
@@ -13,11 +16,11 @@ import { shopScreen } from './screens/shop';
 import { shrineScreen } from './screens/shrine';
 import { titleScreen } from './screens/title';
 import { findNode } from './map';
-import { manaGain, newRun, saveRun, type Phase } from './state';
+import { dailySeed, manaGain, newRun, saveRun, type Phase } from './state';
 import { installDevPanel } from './dev';
 import { el } from './ui';
 
-export { FLOOR_COUNT, floorDef } from './floors';
+export { FLOOR_COUNT, floorDef, nodePreview } from './floors';
 export { rollRewards } from './rewards';
 export { newRun, applyReward } from './state';
 
@@ -29,6 +32,8 @@ export function startApp(root: HTMLElement): void {
     run: newRun(),
     visited: [],
     sold: [],
+    ns: {},
+    dailyPending: null,
     get lastResult(): BattleResult | null { return lastResult; },
     set lastResult(r: BattleResult | null) { lastResult = r; },
     battle: null,
@@ -44,13 +49,14 @@ export function startApp(root: HTMLElement): void {
       const screen = el('div', 'rn-screen', undefined, root);
       cleanup = build(screen) ?? null;
     },
-    save(phase: Phase): void { saveRun(app.run, phase, app.visited, app.sold); },
+    save(phase: Phase): void { saveRun(app.run, phase, app.visited, app.sold, app.ns); },
     leaveNode(): void {
       const node = app.node();
       if (!node) { app.goto.map(); return; }
       const gain = manaGain(node.kind, app.totals());
       app.run = { ...app.run, maxMana: app.run.maxMana + gain, floor: node.row + 1 };
       app.sold = [];
+      app.ns = {};
       app.save('map');
       app.goto.map();
     },
@@ -65,18 +71,25 @@ export function startApp(root: HTMLElement): void {
       shop: () => shopScreen(app),
       forge: () => forgeScreen(app),
       shrine: () => shrineScreen(app),
+      event: () => eventScreen(app),
+      treasure: () => treasureScreen(app),
+      rest: () => restScreen(app),
       resume(phase: Phase): void {
         // A battle can't be resumed mid-fight; prepare is the safe re-entry point.
         const screens: Record<Phase, () => void> = {
           map: app.goto.map, prepare: app.goto.prepare, reward: app.goto.reward, shop: app.goto.shop,
           forge: app.goto.forge, shrine: app.goto.shrine, blessing: app.goto.blessing,
+          event: app.goto.event, treasure: app.goto.treasure, rest: app.goto.rest,
         };
         screens[phase]();
       },
       newRun(schoolId: string): void {
-        app.run = newRun(undefined, schoolId);
+        const daily = app.dailyPending;
+        app.dailyPending = null;
+        app.run = daily ? newRun(dailySeed(daily), schoolId, daily) : newRun(undefined, schoolId);
         app.visited = [];
         app.sold = [];
+        app.ns = {};
         app.lastResult = null;
         app.goto.map();
       },
@@ -84,11 +97,13 @@ export function startApp(root: HTMLElement): void {
       pickNode(node: MapNode): void {
         app.visited = [...app.visited, node.id];
         app.sold = [];
+        app.ns = {};
         app.lastResult = null;
         app.run = { ...app.run, at: node.id, floor: node.row };
         const next: Record<MapNode['kind'], () => void> = {
           battle: app.goto.prepare, elite: app.goto.prepare, boss: app.goto.prepare,
           shop: app.goto.shop, forge: app.goto.forge, shrine: app.goto.shrine,
+          event: app.goto.event, treasure: app.goto.treasure, rest: app.goto.rest,
         };
         next[node.kind]();
       },

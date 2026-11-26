@@ -6,7 +6,7 @@ import type { BattleResult, SpellGraph } from '../../types';
 import type { App } from '../app';
 import { floorDef } from '../floors';
 import { MAP_ROWS } from '../map';
-import { effectiveWardHp } from '../state';
+import { addBattleStats, effectiveWardHp } from '../state';
 import { abandonControl, button, el, rowLabel, topBar } from '../ui';
 
 export function prepareScreen(app: App): void {
@@ -73,13 +73,14 @@ export function battleScreen(app: App): void {
       plan,
       graph: app.run.graph,
       catalog: CATALOG,
-      floor: floorDef(node?.row ?? app.run.floor, kind),
+      floor: floorDef(node?.row ?? app.run.floor, kind, node?.id, app.run.seed),
       wardMaxHp: effectiveWardHp(app.run, totals),
       mods: totals.battle,
       onEnd: (r: BattleResult) => {
         if (done) return;
         done = true;
         app.lastResult = r;
+        app.setRun(addBattleStats(app.run, r));
         // Defer so the battle module can finish its own callback before teardown.
         setTimeout(() => {
           if (!r.won) app.goto.end(false);

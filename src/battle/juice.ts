@@ -1,4 +1,5 @@
 import type { Enemy, World } from './model';
+import { isBoss } from './rules';
 
 /** "Big spell moment" helpers: shake, hit-stop, slow motion, multi-kill and combo tracking. */
 
@@ -28,7 +29,7 @@ export function multiKillTitle(n: number): string | null {
 }
 
 export function isBigEnemy(e: Enemy): boolean {
-  return e.kind === 'elite_knight' || e.kind === 'boss_lich';
+  return e.kind === 'elite_knight' || isBoss(e.kind);
 }
 
 /** Bookkeeping for one kill: multi-kill callouts, combo counter, elite/boss moments. */

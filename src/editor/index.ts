@@ -7,6 +7,8 @@ import {
 } from '../spell';
 import { runeTooltip } from '../data/runes';
 import { sfx } from '../audio';
+import { mountPractice } from '../battle';
+import type { PracticeHandle } from '../contracts';
 
 const CARD_W = 190;
 const SOCK0 = 34;
@@ -100,6 +102,8 @@ function fmt(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+let practiceMemo = false; // fallback when localStorage is unavailable
+
 export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOptions): EditorHandle => {
   const { catalog } = opts;
   let graph: SpellGraph = opts.graph;
@@ -109,11 +113,13 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   let destroyed = false;
 
   const root = h('div', 're-root');
+  const main = h('div', 're-main');
   const canvas = h('div', 're-canvas');
   const layer = h('div', 're-layer');
   const controls = h('div', 're-ctl');
   const side = h('div', 're-side');
-  root.append(canvas, side);
+  main.appendChild(canvas);
+  root.append(main, side);
   container.appendChild(root);
 
   const tooltip = h('div', 're-tooltip');
@@ -171,6 +177,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     graph = g;
     syncHistoryButtons();
     opts.onChange(g);
+    syncPractice();
   }
 
   function stepHistory(from: SpellGraph[], to: SpellGraph[]): void {
@@ -182,6 +189,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     sfx('undo');
     syncHistoryButtons();
     opts.onChange(g);
+    syncPractice();
     render();
   }
   const undo = (): void => stepHistory(undoStack, redoStack);
@@ -199,6 +207,68 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     if (selectedNode) selectedNode = null;
     selectedInv = null;
     render();
+  }
+
+  // ---------------------------------------------------------- practice pane
+  const PRACTICE_KEY = 'chain-spell-practice';
+  const loadPractice = (): boolean => {
+    try { return localStorage.getItem(PRACTICE_KEY) === '1'; } catch { return practiceMemo; }
+  };
+  let practiceOn = loadPractice();
+  let practiceHandle: PracticeHandle | null = null;
+  let practiceDivider: HTMLElement | null = null;
+  let practicePane: HTMLElement | null = null;
+  let practiceMsg: HTMLElement | null = null;
+
+  function showPracticeError(text: string): void {
+    if (!practiceMsg) return;
+    practiceMsg.textContent = `Spell invalid: ${text}`;
+    practiceMsg.style.display = 'block';
+  }
+
+  function syncPractice(): void {
+    if (!practiceHandle || !practiceMsg || destroyed) return;
+    const v = validateSpell(graph, catalog, opts.maxMana);
+    if (v.errors.length > 0) { showPracticeError(v.errors[0]); return; }
+    practiceMsg.style.display = 'none';
+    try {
+      practiceHandle.setSpell(compileSpell(graph, catalog, opts.extraGlobals), graph);
+    } catch (err) {
+      showPracticeError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function closePractice(): void {
+    practiceHandle?.destroy();
+    practiceHandle = null;
+    practiceDivider?.remove();
+    practicePane?.remove();
+    practiceDivider = practicePane = practiceMsg = null;
+  }
+
+  function openPractice(): void {
+    if (practiceHandle || destroyed) return;
+    let plan: ReturnType<typeof compileSpell>;
+    try { plan = compileSpell(graph, catalog, opts.extraGlobals); } catch { return; }
+    practiceDivider = h('div', 're-divider');
+    practicePane = h('div', 're-practice');
+    const mount = h('div', 're-practice-mount');
+    practiceMsg = h('div', 're-practice-msg');
+    practiceMsg.style.display = 'none';
+    practicePane.append(mount, practiceMsg);
+    main.append(practiceDivider, practicePane);
+    practiceHandle = mountPractice(mount, { plan, graph, catalog });
+    const v = validateSpell(graph, catalog, opts.maxMana);
+    if (v.errors.length > 0) showPracticeError(v.errors[0]);
+  }
+
+  function setPractice(on: boolean): void {
+    practiceOn = on;
+    practiceMemo = on;
+    try { localStorage.setItem(PRACTICE_KEY, on ? '1' : '0'); } catch { /* ignore */ }
+    if (on) openPractice(); else closePractice();
+    practiceBtn.classList.toggle('active', practiceHandle !== null);
+    requestAnimationFrame(() => { if (!destroyed) fitView(true); }); // canvas changed size
   }
 
   // ---------------------------------------------------------- pan / zoom
@@ -220,7 +290,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   const zoomAtCenter = (f: number): void => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, view.scale * f);
   undoBtn = mkBtn('\u21B6', 'Undo (Ctrl+Z)', undo);
   redoBtn = mkBtn('\u21B7', 'Redo (Ctrl+Shift+Z / Ctrl+Y)', redo);
+  const practiceBtn = mkBtn('▶ Practice', 'Toggle the practice range (P)', () => setPractice(!practiceOn));
+  practiceBtn.classList.add('re-ctl-practice');
   controls.append(
+    practiceBtn, h('span', 're-ctl-sep'),
     undoBtn, redoBtn, h('span', 're-ctl-sep'),
     mkBtn('−', 'Zoom out', () => zoomAtCenter(1 / 1.25)),
     zoomLabel,
@@ -916,6 +989,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
         return;
       }
     }
+    if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'p') {
+      setPractice(!practiceOn);
+      return;
+    }
     if (e.key === 'Escape' && (selectedInv || selectedNode || notice)) {
       clearSelection();
       render();
@@ -925,10 +1002,12 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
 
   syncHistoryButtons();
   render();
+  if (practiceOn) setPractice(true);
 
   return {
     destroy(): void {
       destroyed = true;
+      closePractice();
       document.removeEventListener('keydown', onKey);
       ro?.disconnect();
       root.remove();

@@ -11,6 +11,10 @@ export interface App {
   visited: string[];
   /** Shop stock indexes already bought at the current shop. */
   sold: number[];
+  /** Per-node state that must survive a reload (reroll flag, event outcome, shop ops). Reset per node. */
+  ns: import('./state').NodeState;
+  /** Set by the title's Daily button: the next run started from the school screen is this daily date. */
+  dailyPending: string | null;
   lastResult: BattleResult | null;
   /** Live battle (set by the battle screen, null otherwise); used by the ?dev panel. */
   battle: BattleHandle | null;
@@ -40,6 +44,9 @@ export interface App {
     shop(): void;
     forge(): void;
     shrine(): void;
+    event(): void;
+    treasure(): void;
+    rest(): void;
     /** Resume a loaded save in its phase. */
     resume(phase: import('./state').Phase): void;
     newRun(schoolId: string): void;

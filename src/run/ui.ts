@@ -2,7 +2,8 @@ import { CATALOG, runeTooltip } from '../data/runes';
 import { upgradeDef, defOf } from '../spell';
 import { sfx, type SfxName } from '../audio';
 import { COLOR_HEX } from '../types';
-import type { BoonDef, MapNodeKind, RuneDef, RuneInstance } from '../types';
+import type { BoonDef, EliteTraitId, EnemyKind, HazardId, MapNodeKind, RuneDef, RuneInstance } from '../types';
+import type { NodePreview } from './floors';
 import type { App } from './app';
 import { MAP_ROWS } from './map';
 import { effectiveWardHp, clearRun } from './state';
@@ -94,8 +95,49 @@ export const NODE_INFO: Record<MapNodeKind, { glyph: string; label: string; desc
   shop: { glyph: '$', label: 'Shop', desc: 'Spend gold on runes, forging, or removing a curse. +1 max mana.' },
   forge: { glyph: '⚒', label: 'Forge', desc: 'Upgrade one owned rune for free. +1 max mana.' },
   shrine: { glyph: '✦', label: 'Shrine', desc: 'Pick a blessing, or take a Dark Bargain. +1 max mana.' },
+  event: { glyph: '?', label: 'Event', desc: 'A short choice with a tradeoff. +1 max mana.' },
+  treasure: { glyph: '◆', label: 'Treasure', desc: 'Pick 1 of 3 rare runes, at least one a keystone. +1 max mana.' },
+  rest: { glyph: '☾', label: 'Rest', desc: '+10 max ward HP, or forge one rune for free. +1 max mana.' },
   boss: { glyph: '☠', label: 'Boss', desc: 'The final fight. Winning ends the run.' },
 };
+
+/** Map preview texts (DESIGN.md: Enemies, Hazards, Elite traits, Bosses). */
+export const ENEMY_INFO: Partial<Record<EnemyKind, { name: string; glyph: string; rule: string }>> = {
+  shield_bearer: { name: 'Shield Bearer', glyph: '◈', rule: 'A shield absorbs the first hit; regrows after 4 s. Use many small hits.' },
+  splitter: { name: 'Splitter', glyph: '⑂', rule: 'Splits into 3 Splitlings on death. Use area damage.' },
+  cleanser: { name: 'Cleanser', glyph: '✚', rule: 'Every 4 s strips statuses within 150. Burst it first.' },
+  armored: { name: 'Armored', glyph: '▣', rule: 'Takes 60% less damage unless frozen or weakened.' },
+  swarmer: { name: 'Swarmer', glyph: '∴', rule: 'Arrives in packs of 8-12, tiny and fast. Pierce or chain.' },
+  boss_lich: { name: 'Lich King', glyph: '☠', rule: 'Ranged volleys and summons.' },
+  boss_golem: { name: 'Stone Golem', glyph: '☠', rule: 'Shell cuts damage 75% (Shatter, Combust or Overload breaks it); stomps hurt the ward.' },
+  boss_hydra: { name: 'Hydra', glyph: '☠', rule: 'Grows 2 Hydra Heads at 66% and 33% HP.' },
+};
+export const HAZARD_INFO: Record<HazardId, { name: string; glyph: string; rule: string }> = {
+  rain: { name: 'Rain', glyph: '≋', rule: 'Every enemy is permanently Wet; fire damage -25%.' },
+  heatwave: { name: 'Heatwave', glyph: '≈', rule: 'Every 5 s all enemies start Burning; slows are half as strong.' },
+  fog: { name: 'Fog', glyph: '░', rule: 'Enemies beyond x = 650 are hidden until hit.' },
+};
+export const TRAIT_INFO: Record<EliteTraitId, { name: string; glyph: string; rule: string }> = {
+  hasted: { name: 'Hasted', glyph: '»', rule: 'Elites move 40% faster.' },
+  reflective: { name: 'Reflective', glyph: '↺', rule: '15% of damage they take hits the ward (max 5 per hit).' },
+  regenerating: { name: 'Regenerating', glyph: '+', rule: 'Elites heal 2% max HP/s after 2 s without being hit.' },
+  burn_immune: { name: 'Burn-immune', glyph: '⊘', rule: 'No burn on elites; fire damage -50%.' },
+};
+
+export interface PreviewLine { glyph: string; kind: string; name: string; rule: string }
+/** Preview lines for a node's featured enemy, hazard, trait and boss. */
+export function previewLines(p: NodePreview): PreviewLine[] {
+  const out: PreviewLine[] = [];
+  const e = p.featured ? ENEMY_INFO[p.featured] : undefined;
+  if (e) out.push({ glyph: e.glyph, kind: 'Featured enemy', name: e.name, rule: e.rule });
+  const h = p.hazard ? HAZARD_INFO[p.hazard] : undefined;
+  if (h) out.push({ glyph: h.glyph, kind: 'Hazard', name: h.name, rule: h.rule });
+  const t = p.trait ? TRAIT_INFO[p.trait] : undefined;
+  if (t) out.push({ glyph: t.glyph, kind: 'Elite trait', name: t.name, rule: t.rule });
+  const b = p.boss ? ENEMY_INFO[p.boss] : undefined;
+  if (b) out.push({ glyph: b.glyph, kind: 'Boss', name: b.name, rule: b.rule });
+  return out;
+}
 
 /** Stat chips (gold, mana, ward HP) and the held boons. */
 export function runStats(app: App, parent: HTMLElement): void {
@@ -107,6 +149,10 @@ export function runStats(app: App, parent: HTMLElement): void {
   mana.title = 'Max mana (spell budget)';
   const ward = el('span', 'rn-stchip ward', `Ward ${effectiveWardHp(run, totals)} HP`, parent);
   ward.title = 'Ward HP (resets every battle)';
+  if (run.daily) {
+    const d = el('span', 'rn-stchip daily', 'Daily', parent);
+    d.title = `Daily run ${run.daily}: same map and offers for everyone today`;
+  }
   const boons = el('span', 'rn-boons', undefined, parent);
   for (const id of run.boons) {
     const d = app.boons[id];
@@ -168,4 +214,22 @@ export function forgePreview(inst: RuneInstance, parent: HTMLElement): void {
   el('span', 'rn-forgearrow', '→', row);
   const b = runeCard(upgradeDef(def), row, 'div');
   b.classList.add('static', 'forged');
+}
+
+/** Like runePicker, but several runes can be selected; `canPick` greys out ineligible ones. */
+export function runePickerMulti(
+  parent: HTMLElement, runes: RuneInstance[], inGraph: Set<string>, selected: string[],
+  canPick: (inst: RuneInstance) => boolean, onToggle: (uid: string) => void,
+): void {
+  const list = el('div', 'rn-picker', undefined, parent);
+  for (const inst of runes) {
+    const def = defOf(CATALOG, inst);
+    if (!def) continue;
+    const on = selected.includes(inst.uid);
+    const b = el('button', `rn-pick ${def.rarity}${on ? ' selected' : ''}`, undefined, list);
+    el('span', 'rn-pick-name', def.name, b);
+    el('span', 'rn-pick-sub', inGraph.has(inst.uid) ? 'in spell' : 'inventory', b);
+    b.disabled = !on && !canPick(inst);
+    b.addEventListener('click', () => { sfx('uiClick'); onToggle(inst.uid); });
+  }
 }

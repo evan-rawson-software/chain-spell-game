@@ -6,7 +6,9 @@ import { findNode } from './map';
 import { newRun } from './state';
 
 const SCREENS_WITHOUT_RUN = ['title', 'school', 'end'];
-const KIND_LABEL: Record<string, string> = { battle: 'Battle', elite: 'Elite', shop: 'Shop', forge: 'Forge', shrine: 'Shrine', boss: 'Boss' };
+const KIND_LABEL: Record<string, string> = {
+  battle: 'Battle', elite: 'Elite', shop: 'Shop', forge: 'Forge', shrine: 'Shrine', event: 'Event', treasure: 'Treasure', rest: 'Rest', boss: 'Boss',
+};
 
 /** ?dev panel: jump around the map, grant things, drive the battle. Only installed when the flag is set. */
 export function installDevPanel(app: App): void {
@@ -63,7 +65,7 @@ export function installDevPanel(app: App): void {
 
   const needsFreshRun = (): boolean => SCREENS_WITHOUT_RUN.includes(app.current);
   const ensureRun = (): void => {
-    if (needsFreshRun()) { app.setRun(newRun()); app.visited = []; app.sold = []; app.lastResult = null; }
+    if (needsFreshRun()) { app.setRun(newRun()); app.visited = []; app.sold = []; app.ns = {}; app.lastResult = null; }
   };
   /** Re-open the current screen so the new run state shows (that screen saves it). */
   const rerender = (): void => {
@@ -84,6 +86,7 @@ export function installDevPanel(app: App): void {
     }
     app.visited = path;
     app.sold = [];
+    app.ns = {};
     app.lastResult = null;
     app.setRun({ ...app.run, at: node.id, floor: node.row });
   };
@@ -91,7 +94,8 @@ export function installDevPanel(app: App): void {
     ensureRun();
     activate(node);
     const go = app.goto;
-    const target = { battle: go.prepare, elite: go.prepare, boss: go.prepare, shop: go.shop, forge: go.forge, shrine: go.shrine }[node.kind];
+    const target = { battle: go.prepare, elite: go.prepare, boss: go.prepare, shop: go.shop, forge: go.forge, shrine: go.shrine,
+      event: go.event, treasure: go.treasure, rest: go.rest }[node.kind];
     target();
   };
   /** The active node, or (when none, or of the wrong kind) the first node of `kind`, made active. */

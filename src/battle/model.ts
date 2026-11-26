@@ -1,5 +1,7 @@
 import { keystoneFlags, type KeystoneFlags } from './keystones';
-import type { BattleMods, KeystoneId, Element, EnemyKind, ResolvedShot, StatusKind } from '../types';
+import type {
+  BattleMods, KeystoneId, Element, EliteTraitId, EnemyKind, HazardId, ReactionKind, ResolvedShot, StatusKind,
+} from '../types';
 
 export const W = 1000;
 export const H = 600;
@@ -11,8 +13,9 @@ export const MUZZLE_X = WARD_X;
 export const MUZZLE_Y = WARD_Y;
 
 export interface StatusState {
-  burn: { dps: number; t: number } | null;
-  poison: { dps: number; t: number }[];
+  /** `src` = sourceUid of the rune that applied it (per-rune damage stats) */
+  burn: { dps: number; t: number; src?: string } | null;
+  poison: { dps: number; t: number; src?: string }[];
   slow: { p: number; t: number } | null;
   freeze: number;
   wet: { p: number; t: number } | null;
@@ -31,6 +34,12 @@ export interface EnemyCfg {
   /** ranged: stop at stopX and shoot */
   ranged?: { stopX: number; cd: number; projSpeed: number; projR: number; dmg: number; count: number; spreadDeg: number; color: string };
   summon?: { every: number; count: number };
+  /** Shield Bearer: a shield absorbs one whole hit */
+  shield?: boolean;
+  /** Cleanser: every `every` s strips all statuses from enemies within `radius` */
+  pulse?: { every: number; radius: number };
+  /** Golem: periodic shockwave */
+  stomp?: { every: number };
   /** multiplier on freeze duration */
   freezeMul: number;
 }
@@ -55,6 +64,23 @@ export interface Enemy {
   phase: number;
   /** reaction kind -> world time before which it can't trigger on this enemy again */
   reactAt: Record<string, number>;
+  /** HP scale this enemy was spawned with (for splits) */
+  hpScale: number;
+  /** shield up (Shield Bearer) */
+  shield: boolean;
+  /** world time the enemy last took a non-DoT hit (blocked hits count; fog reveal) */
+  lastHit: number;
+  /** world time the enemy last took any damage (Regenerating) */
+  lastDamaged: number;
+  /** seconds of broken shell remaining (Golem) */
+  shellBroken: number;
+  /** Golem: seconds until the next stomp; Cleanser: until the next pulse */
+  abilityCd: number;
+  /** Hydra growth stage reached (0..2) */
+  stage: number;
+  trait?: EliteTraitId;
+  /** visual timer: shield pop / pulse flash */
+  shieldFlash: number;
 }
 
 export interface PProj {
@@ -121,6 +147,13 @@ export interface World {
   ks: KeystoneFlags;
   /** casts since the ward was last damaged (Momentum) */
   momentum: number;
+  hazard?: HazardId;
+  eliteTrait?: EliteTraitId;
+  /** heatwave: seconds until the next ignition */
+  hazardT: number;
+  /** damage per terminal rune sourceUid */
+  runeDamage: Record<string, number>;
+  reactionCounts: Partial<Record<ReactionKind, number>>;
 }
 
 export const NEUTRAL_MODS: BattleMods = {
@@ -157,9 +190,52 @@ export const ENEMY_CFG: Record<EnemyKind, EnemyCfg> = {
     ranged: { stopX: 750, cd: 3.5, projSpeed: 210, projR: 8, dmg: 10, count: 5, spreadDeg: 50, color: '#8cffb0' },
     summon: { every: 12, count: 3 },
   },
+  shield_bearer: {
+    name: 'Shield Bearer', hp: 90, speed: 42, r: 17, color: '#5f87b8', resist: {},
+    melee: { dmg: 10, cd: 1.2 }, freezeMul: 1, shield: true,
+  },
+  splitter: {
+    name: 'Splitter', hp: 90, speed: 45, r: 18, color: '#b8508c', resist: {},
+    melee: { dmg: 8, cd: 1.1 }, freezeMul: 1,
+  },
+  splitling: {
+    name: 'Splitling', hp: 12, speed: 115, r: 7, color: '#e07ab5', resist: {},
+    melee: { dmg: 3, cd: 0.8 }, freezeMul: 1,
+  },
+  cleanser: {
+    name: 'Cleanser', hp: 60, speed: 45, r: 14, color: '#f2e8a0', resist: {}, freezeMul: 1,
+    ranged: { stopX: 540, cd: 3.5, projSpeed: 220, projR: 4, dmg: 3, count: 1, spreadDeg: 0, color: '#fff6c0' },
+    pulse: { every: 4, radius: 150 },
+  },
+  armored: {
+    name: 'Armored', hp: 140, speed: 36, r: 18, color: '#7d8794', resist: {},
+    melee: { dmg: 14, cd: 1.4 }, freezeMul: 1,
+  },
+  swarmer: {
+    name: 'Swarmer', hp: 12, speed: 140, r: 6, color: '#c8553d', resist: {},
+    melee: { dmg: 2, cd: 0.6 }, freezeMul: 1,
+  },
+  boss_golem: {
+    name: 'Stone Golem', hp: 3000, speed: 24, r: 52, color: '#8a8478', resist: {}, freezeMul: 0.3,
+    melee: { dmg: 35, cd: 2.2 }, stomp: { every: 8 },
+  },
+  boss_hydra: {
+    name: 'Hydra', hp: 3000, speed: 28, r: 46, color: '#3f8f5a', resist: { nature: 0.5 }, freezeMul: 0.3,
+    melee: { dmg: 30, cd: 1.8 },
+  },
+  hydra_head: {
+    name: 'Hydra Head', hp: 450, speed: 0, r: 15, color: '#6fb85a', resist: { nature: 0.5 }, freezeMul: 0.6,
+    ranged: { stopX: 5000, cd: 2.4, projSpeed: 260, projR: 5, dmg: 8, count: 1, spreadDeg: 0, color: '#9be05a' },
+  },
+  dummy: {
+    name: 'Training Dummy', hp: 1_000_000, speed: 0, r: 22, color: '#b08a5a', resist: {}, freezeMul: 1,
+  },
 };
 
-export function newWorld(wardMax: number, mods: BattleMods = NEUTRAL_MODS, keystones: readonly KeystoneId[] = []): World {
+export function newWorld(
+  wardMax: number, mods: BattleMods = NEUTRAL_MODS, keystones: readonly KeystoneId[] = [],
+  floorRules: { hazard?: HazardId; eliteTrait?: EliteTraitId } = {},
+): World {
   return {
     time: 0, enemies: [], pprojs: [], eprojs: [], fx: [], rings: [], arcs: [], texts: [],
     wardHp: wardMax, wardMax, wardFlash: 0, kills: 0, damageTaken: 0, nextId: 1,
@@ -167,6 +243,7 @@ export function newWorld(wardMax: number, mods: BattleMods = NEUTRAL_MODS, keyst
     trauma: 0, hitStopReq: 0, slowmoReq: 0, flashReq: 0, killTimes: [], multiShown: 0,
     combo: { n: 0, last: -99 }, callout: null, lastReactSfx: -99,
     ks: keystoneFlags(keystones), momentum: 0,
+    hazard: floorRules.hazard, eliteTrait: floorRules.eliteTrait, hazardT: 5, runeDamage: {}, reactionCounts: {},
   };
 }
 

@@ -1,8 +1,9 @@
 import { sfx } from '../../audio';
 import type { MapNode } from '../../types';
 import type { App } from '../app';
+import { nodePreview } from '../floors';
 import { MAP_ROWS, reachable } from '../map';
-import { NODE_INFO, abandonControl, el, rowLabel, topBar } from '../ui';
+import { NODE_INFO, abandonControl, el, previewLines, rowLabel, topBar } from '../ui';
 
 const NS = 'http://www.w3.org/2000/svg';
 const W = 600;
@@ -66,10 +67,24 @@ export function mapScreen(app: App): void {
         const canPick = options.has(n.id);
         const cls = ['rn-mn', n.kind, visited.has(n.id) ? 'visited' : '', isHere ? 'here' : '', canPick ? 'reach' : ''].filter(Boolean).join(' ');
         const g = svg('g', { class: cls, transform: `translate(${x} ${y})` }, root);
-        svg('title', {}, g, `${info.label}${canPick ? ' (click to go)' : ''}: ${info.desc}`);
+        const lines = previewLines(nodePreview(n.row, n.kind, n.id, app.run.seed));
+        const tip = [`${info.label}${canPick ? ' (click to go)' : ''}: ${info.desc}`, ...lines.map((l) => `${l.kind}: ${l.name} - ${l.rule}`)];
+        svg('title', {}, g, tip.join(' | '));
+        g.addEventListener('mouseenter', () => showDetail(n));
+        g.addEventListener('focus', () => showDetail(n));
+        g.addEventListener('mouseleave', () => showDetail(null));
         if (canPick) svg('circle', { r: 24, class: 'ring' }, g);
         svg('circle', { r: 18, class: 'body' }, g);
         svg('text', { class: 'glyph', y: 6, 'text-anchor': 'middle' }, g, info.glyph);
+        // Preview markers: one small badge per featured enemy / hazard / trait under the node.
+        const marks = lines.filter((l) => l.kind !== 'Boss');
+        marks.forEach((l, i) => {
+          const b = svg('g', { class: 'badge', transform: `translate(${(i - (marks.length - 1) / 2) * 15} 24)` }, g);
+          svg('circle', { r: 6.5 }, b);
+          svg('text', { y: 3, 'text-anchor': 'middle' }, b, l.glyph);
+        });
+        const boss = lines.find((l) => l.kind === 'Boss');
+        if (boss) svg('text', { class: 'bosslabel', y: 33, 'text-anchor': 'middle' }, g, boss.name);
         if (canPick) {
           g.setAttribute('tabindex', '0');
           g.setAttribute('role', 'button');
@@ -82,8 +97,23 @@ export function mapScreen(app: App): void {
     }
 
     const legend = el('div', 'rn-legend', undefined, body);
+    const detail = el('div', 'rn-detail', undefined, legend);
+    const showDetail = (n: MapNode | null): void => {
+      detail.innerHTML = '';
+      if (!n) { el('div', 'rn-detail-line', 'Hover a node to see what awaits there.', detail); return; }
+      const info = NODE_INFO[n.kind];
+      const name = el('div', `rn-detail-name ${n.kind}`, `${info.label} - row ${n.row}`, detail);
+      name.title = info.desc;
+      el('div', 'rn-detail-line', info.desc, detail);
+      for (const l of previewLines(nodePreview(n.row, n.kind, n.id, app.run.seed))) {
+        const line = el('div', 'rn-detail-line', undefined, detail);
+        el('b', undefined, `${l.glyph} ${l.kind}: ${l.name}. `, line);
+        line.appendChild(document.createTextNode(l.rule));
+      }
+    };
+    showDetail(null);
     el('div', 'rn-legend-title', 'Legend', legend);
-    for (const k of ['battle', 'elite', 'shop', 'forge', 'shrine', 'boss'] as const) {
+    for (const k of ['battle', 'elite', 'shop', 'forge', 'shrine', 'event', 'treasure', 'rest', 'boss'] as const) {
       const info = NODE_INFO[k];
       const row = el('div', 'rn-legend-row', undefined, legend);
       el('span', `rn-legend-glyph ${k}`, info.glyph, row);
@@ -91,5 +121,6 @@ export function mapScreen(app: App): void {
       el('div', 'rn-legend-name', info.label, t);
       el('div', 'rn-legend-desc', info.desc, t);
     }
+    el('div', 'rn-legend-desc', 'Small badges under a node show its featured enemy, hazard and elite trait; the boss is named under its node.', legend);
   });
 }

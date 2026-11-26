@@ -1,14 +1,15 @@
 import type { Element, ResolvedShot } from '../types';
 import type { SfxName } from '../audio';
-import { damageEnemy } from './enemies';
+import { blockHit, damageEnemy } from './enemies';
 import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, burst, floatText, type Enemy, type PProj, type World } from './model';
 import { addTrauma } from './juice';
 import {
   consumeStatuses, consumedKeys, markTriggered, planReactions, reactionMult, readyPlans, type ReactionPlan,
 } from './reactions';
-import { applyStatus } from './status';
+import { applyStatus, type ApplyCtx } from './status';
+import { SHELL_BREAK_TIME, breaksShell, hazardSlowMul } from './rules';
 import { canReact, canSplit, frostfireStatuses, shardHeadings, shardShot } from './keystones';
-import { sfx } from '../audio';
+import { sfx } from './sound';
 
 const CHAIN_RANGE = 200;
 const CHAIN_FALLOFF = 0.75;
@@ -22,8 +23,13 @@ const HIT_SFX: Record<Element, SfxName> = {
   arcane: 'hitArcane', storm: 'hitStorm', pure: 'hitPure',
 };
 
-/** Spawn all projectiles of one shot, aimed at (tx, ty). */
-export function fireShot(w: World, baseShot: ResolvedShot, tx: number, ty: number, dmgMul = 1): void {
+/**
+ * Spawn all projectiles of one shot, aimed at (tx, ty). `speed` is the effective speed after the
+ * in-cast cap (see timing.ts); the shot itself keeps its own speed (Hydra shards are exempt).
+ */
+export function fireShot(
+  w: World, baseShot: ResolvedShot, tx: number, ty: number, dmgMul = 1, speed = baseShot.speed,
+): void {
   const shot = dmgMul === 1 ? baseShot : { ...baseShot, damage: baseShot.damage * dmgMul };
   const base = Math.atan2(ty - MUZZLE_Y, tx - MUZZLE_X);
   const n = Math.max(1, Math.round(shot.count));
@@ -32,7 +38,7 @@ export function fireShot(w: World, baseShot: ResolvedShot, tx: number, ty: numbe
     const a = n > 1 ? base - spread / 2 + (spread * i) / (n - 1) : base;
     w.pprojs.push({
       x: MUZZLE_X, y: MUZZLE_Y,
-      vx: Math.cos(a) * shot.speed, vy: Math.sin(a) * shot.speed,
+      vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
       r: Math.max(2, shot.size), shot, hit: new Set(), pierceLeft: Math.max(0, Math.round(shot.pierce)),
       dead: false, age: 0,
     });
@@ -57,40 +63,60 @@ function nearest(w: World, x: number, y: number, exclude: Set<number>, maxDist =
  * applied. `depth` 0 is a shot's own hit; reaction damage re-enters at depth + 1 and only reacts
  * with the Cascade Core keystone (see canReact).
  */
-function resolveHit(w: World, e: Enemy, element: Element, dmg: number, depth: number): void {
+/** Context for statuses a shot applies: attribution plus the hazard's slow modifier. */
+function statusCtx(w: World, src?: string): ApplyCtx {
+  return { src, slowMul: hazardSlowMul(w.hazard) };
+}
+
+/** Returns false when a Shield Bearer's shield absorbed the whole hit. */
+function resolveHit(w: World, e: Enemy, element: Element, dmg: number, depth: number, src: string): boolean {
+  if (blockHit(w, e)) return false;
   const plans = e.dead || !canReact(depth, w.ks.chain_reaction)
     ? [] : readyPlans(planReactions(e.st, element), e.reactAt, w.time);
   const rdm = w.mods.reactionDamageMul;
-  damageEnemy(w, e, dmg * reactionMult(plans, rdm), element, false, { reaction: depth > 0 || plans.length > 0 });
+  damageEnemy(w, e, dmg * reactionMult(plans, rdm), element, false, { reaction: depth > 0 || plans.length > 0, src });
   if (plans.length) {
     markTriggered(plans, e.reactAt, w.time);
     consumeStatuses(e.st, consumedKeys(plans, w.ks.everlasting));
-    plans.forEach((p, i) => runReaction(w, e, p, dmg, rdm, i, depth));
+    plans.forEach((p, i) => runReaction(w, e, p, dmg, rdm, i, depth, src));
   }
+  return true;
 }
 
 /** A shot's hit on `e`. Returns true if this hit killed it. */
 function applyHit(w: World, e: Enemy, shot: ResolvedShot, dmg: number): boolean {
   const wasDead = e.dead;
-  resolveHit(w, e, shot.element, dmg, 0);
-  if (!e.dead) {
-    for (const s of shot.statuses) applyStatus(e, s);
-    if (w.ks.frostfire) for (const s of frostfireStatuses(shot.element)) applyStatus(e, s);
+  const landed = resolveHit(w, e, shot.element, dmg, 0, shot.sourceUid);
+  if (landed && !e.dead) {
+    const ctx = statusCtx(w, shot.sourceUid);
+    for (const s of shot.statuses) applyStatus(e, s, ctx);
+    if (w.ks.frostfire) for (const s of frostfireStatuses(shot.element)) applyStatus(e, s, ctx);
   }
   burst(w, e.x, e.y, ELEMENT_COLOR[shot.element], 7, 130, 0.35, 2.2);
   return !wasDead && e.dead;
 }
 
 /** Reaction damage: reacts again (one level deeper) only with Cascade Core, else plain damage. */
-function reactionHit(w: World, o: Enemy, amount: number, element: Element, depth: number): void {
+function reactionHit(w: World, o: Enemy, amount: number, element: Element, depth: number, src: string): void {
   if (amount <= 0) return;
-  if (canReact(depth + 1, w.ks.chain_reaction)) resolveHit(w, o, element, amount, depth + 1);
-  else damageEnemy(w, o, amount, element, false, { reaction: true });
+  if (canReact(depth + 1, w.ks.chain_reaction)) resolveHit(w, o, element, amount, depth + 1, src);
+  else if (!blockHit(w, o)) damageEnemy(w, o, amount, element, false, { reaction: true, src });
 }
 
 /** Feedback and area effects of one reaction on `e`. `hitDmg` is the triggering hit before multipliers. */
-function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: number, idx: number, depth: number): void {
+function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: number, idx: number, depth: number, src: string): void {
   w.reactions++;
+  w.reactionCounts[p.kind] = (w.reactionCounts[p.kind] ?? 0) + 1;
+  if (e.kind === 'boss_golem' && breaksShell(p.kind)) {
+    if (e.shellBroken <= 0) {
+      floatText(w, e.x, e.y - e.r - 44, 'SHELL BROKEN', '#ffb35a', 24, 1.4, true);
+      w.callout = { text: 'SHELL BROKEN', color: '#ffb35a', t: 0, max: 1.2 };
+      burst(w, e.x, e.y, '#b8b0a0', 26, 240, 0.6, 3);
+      addTrauma(w, 0.5);
+    }
+    e.shellBroken = SHELL_BREAK_TIME;
+  }
+  const sctx = statusCtx(w, src);
   floatText(w, e.x, e.y - e.r - 24 - idx * 16, p.name, p.color, 17, 1.1, true);
   addTrauma(w, 0.25);
   if (p.kind === 'shatter') {
@@ -110,21 +136,21 @@ function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: n
       w.rings.push({ x, y, r: 10, maxR: ex.radius, t: 0, max: 0.6, color: p.color });
       burst(w, x, y, p.color, 22, ex.radius * 1.4, 0.7, 3);
       for (const o of near(ex.radius, true)) {
-        applyStatus(o, { kind: 'wet', potency: ex.wet.p, duration: ex.wet.t });
-        applyStatus(o, { kind: 'slow', potency: ex.slow.p, duration: ex.slow.t });
+        applyStatus(o, { kind: 'wet', potency: ex.wet.p, duration: ex.wet.t }, sctx);
+        applyStatus(o, { kind: 'slow', potency: ex.slow.p, duration: ex.slow.t }, sctx);
       }
       break;
     case 'combust': {
       w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.4, color: p.color });
       burst(w, x, y, p.color, 20, ex.radius * 2, 0.5, 2.8);
       const dmg = ex.damage * rdm;
-      for (const o of near(ex.radius, true)) reactionHit(w, o, dmg, 'fire', depth);
+      for (const o of near(ex.radius, true)) reactionHit(w, o, dmg, 'fire', depth, src);
       break;
     }
     case 'spread':
       w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.5, color: p.color });
       for (const o of near(ex.radius, false)) {
-        applyStatus(o, { kind: 'burn', potency: ex.burn.dps, duration: ex.burn.t });
+        applyStatus(o, { kind: 'burn', potency: ex.burn.dps, duration: ex.burn.t }, sctx);
         burst(w, o.x, o.y, p.color, 6, 90, 0.4, 2);
       }
       break;
@@ -133,7 +159,7 @@ function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: n
       for (const o of near(ex.radius, false)) {
         if (!o.st.wet) continue;
         w.arcs.push({ pts: lightningPoints(x, y, o.x, o.y), t: 0, max: 0.3, color: ELEMENT_COLOR.lightning });
-        reactionHit(w, o, dmg, 'lightning', depth);
+        reactionHit(w, o, dmg, 'lightning', depth, src);
         if (!w.ks.everlasting) consumeStatuses(o.st, ['wet']);
       }
       break;
@@ -142,7 +168,7 @@ function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: n
       w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.35, color: p.color });
       burst(w, x, y, p.color, 16, ex.radius * 2.2, 0.45, 2.6);
       const dmg = hitDmg * ex.frac * rdm;
-      for (const o of near(ex.radius, false)) reactionHit(w, o, dmg, 'lightning', depth);
+      for (const o of near(ex.radius, false)) reactionHit(w, o, dmg, 'lightning', depth, src);
       break;
     }
   }

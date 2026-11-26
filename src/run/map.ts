@@ -3,8 +3,13 @@ import { createRng, type Rng } from './rng';
 
 export const MAP_ROWS = 10;
 
-const KIND_WEIGHTS: [MapNodeKind, number][] = [['battle', 50], ['elite', 12], ['shop', 13], ['forge', 12], ['shrine', 13]];
-const REST_KINDS: MapNodeKind[] = ['shop', 'forge', 'shrine'];
+const KIND_WEIGHTS: [MapNodeKind, number][] = [
+  ['battle', 50], ['elite', 12], ['shop', 13], ['forge', 12], ['shrine', 13], ['event', 10], ['treasure', 4], ['rest', 6],
+];
+/** First row where each kind may appear (default 2). */
+const MIN_ROW: Partial<Record<MapNodeKind, number>> = { elite: 4, treasure: 3, rest: 3 };
+/** The row before the boss. */
+const REST_KINDS: MapNodeKind[] = ['shop', 'forge', 'shrine', 'rest'];
 
 export const nodeId = (row: number, col: number): string => `r${row}c${col}`;
 
@@ -25,7 +30,7 @@ function rowKinds(row: number, rng: Rng): MapNodeKind[] {
     return Array.from({ length: n }, () => rng.pick(REST_KINDS));
   }
   const n = 2 + rng.int(3);
-  const pool = KIND_WEIGHTS.filter(([k]) => k !== 'elite' || row >= 4);
+  const pool = KIND_WEIGHTS.filter(([k]) => row >= (MIN_ROW[k] ?? 2));
   const kinds = Array.from({ length: n }, () => rng.weighted(pool, ([, w]) => w)[0]);
   if (!kinds.includes('battle')) kinds[rng.int(n)] = 'battle';
   // Every map has at least one elite (row 5), without removing the row's only battle.

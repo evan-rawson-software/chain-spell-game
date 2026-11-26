@@ -16,3 +16,11 @@
   cursor: none;
   touch-action: none;
 }
+
+.practice-root {
+  position: relative;
+  overflow: hidden;
+  background: #05060c;
+  user-select: none;
+  -webkit-user-select: none;
+}

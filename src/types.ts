@@ -180,7 +180,23 @@ export interface CastPlan {
 
 // ---------------------------------------------------------------- Encounters
 
-export type EnemyKind = 'grunt' | 'runner' | 'brute' | 'archer' | 'shaman' | 'elite_knight' | 'boss_lich';
+export type EnemyKind =
+  | 'grunt' | 'runner' | 'brute' | 'archer' | 'shaman' | 'elite_knight'
+  // enemies that ask questions (DESIGN.md, Enemies)
+  | 'shield_bearer' | 'splitter' | 'splitling' | 'cleanser' | 'armored' | 'swarmer'
+  // bosses (one per run) and their spawns
+  | 'boss_lich' | 'boss_golem' | 'boss_hydra' | 'hydra_head'
+  // practice range target (never in waves)
+  | 'dummy';
+
+/** Floor-wide rule (DESIGN.md, Hazards). */
+export type HazardId = 'rain' | 'heatwave' | 'fog';
+
+/** Random trait on a floor's elite enemies (DESIGN.md, Elite traits). */
+export type EliteTraitId = 'hasted' | 'reflective' | 'regenerating' | 'burn_immune';
+
+export type ReactionKind =
+  | 'shatter' | 'melt' | 'steam' | 'combust' | 'wildfire' | 'electrocute' | 'overload' | 'unravel';
 
 export interface SpawnGroup {
   kind: EnemyKind;
@@ -201,6 +217,9 @@ export interface FloorDef {
   waves: WaveDef[];
   /** enemy HP multiplier for scaling */
   hpScale: number;
+  hazard?: HazardId;
+  /** applies to elite_knight enemies on this floor */
+  eliteTrait?: EliteTraitId;
 }
 
 export interface BattleResult {
@@ -212,6 +231,9 @@ export interface BattleResult {
   reactions?: number;
   /** Largest single hit dealt. */
   bestHit?: number;
+  /** Damage dealt per terminal rune (ResolvedShot.sourceUid), including its shards, reactions and DoTs. */
+  runeDamage?: Record<string, number>;
+  reactionCounts?: Partial<Record<ReactionKind, number>>;
 }
 
 // ---------------------------------------------------------------- Blessings & curses
@@ -264,7 +286,7 @@ export interface SchoolDef {
 
 // ---------------------------------------------------------------- Map
 
-export type MapNodeKind = 'battle' | 'elite' | 'shop' | 'forge' | 'shrine' | 'boss';
+export type MapNodeKind = 'battle' | 'elite' | 'shop' | 'forge' | 'shrine' | 'event' | 'treasure' | 'rest' | 'boss';
 
 export interface MapNode {
   /** unique, e.g. "r3c1" */
@@ -302,6 +324,19 @@ export interface RunState {
   gold: number;
   /** BoonDef ids currently held (blessings and curses) */
   boons: string[];
+  /** 'YYYY-MM-DD' for a daily-seed run, else null */
+  daily: string | null;
+  stats: RunStats;
+}
+
+/** Accumulated over the run for the end summary. */
+export interface RunStats {
+  battles: number;
+  kills: number;
+  bestHit: number;
+  /** by rune instance uid */
+  runeDamage: Record<string, number>;
+  reactions: Partial<Record<ReactionKind, number>>;
 }
 
 /** Floor rewards are always runes. Max mana grows automatically per floor (see run/state.ts). */

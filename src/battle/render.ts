@@ -2,6 +2,9 @@ import type { FloorDef, StatusKind } from '../types';
 import { drawArena } from './arena';
 import { drawMagicCircle } from './circle';
 import {
+  FOG_X, HAZARD_INFO, SHELL_BREAK_TIME, SHIELD_REGROW, STOMP_RANGE, TRAIT_INFO, defenseUp, fogAlpha, isBoss,
+} from './rules';
+import {
   ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, STATUS_COLOR, W,
   type Enemy, type World,
 } from './model';
@@ -40,19 +43,30 @@ export interface HudState {
   callout: { text: string; color: string; k: number } | null;
   /** Momentum keystone readout, or null */
   momentum: string | null;
+  /** Practice range: skip the battle HUD; only the aim reticle is drawn */
+  practice?: boolean;
 }
 
 export function render(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   drawArena(ctx, h.floor, h.time, h.pxScale, h.offX, h.viewW);
+  if (w.hazard === 'fog') drawFog(ctx, h);
   drawMagicCircle(ctx, w, {
     time: h.time, progress: h.castTime > 0 ? h.charge / h.castTime : 0, hasShots: h.hasShots,
     sinceCast: h.sinceCast, color: h.orbColor, aimX: h.aimX, aimY: h.aimY, big: h.bigCast,
   });
-  for (const e of w.enemies) drawEnemy(ctx, e, h.time);
+  for (const e of w.enemies) {
+    const a = w.hazard === 'fog' ? fogAlpha(e.x, w.time - e.lastHit) : 1;
+    if (a <= 0) continue;
+    ctx.globalAlpha = a;
+    drawEnemy(ctx, e, h.time);
+    ctx.globalAlpha = 1;
+  }
   drawEnemyProjectiles(ctx, w);
   drawPlayerProjectiles(ctx, w);
   drawEffects(ctx, w);
-  drawHud(ctx, w, h);
+  drawHazardOverlay(ctx, w, h);
+  if (h.practice) drawAim(ctx, h);
+  else drawHud(ctx, w, h);
 }
 
 function glow(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, alpha: number): void {
@@ -325,7 +339,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number): void {
   const r = e.r;
   const frozen = e.st.freeze > 0;
   const walk = frozen ? 0 : e.phase * 6;
-  const bob = frozen || e.kind === 'boss_lich' ? 0 : -Math.abs(Math.sin(walk)) * Math.min(3, r * 0.15);
+  const bob = frozen || isBoss(e.kind) ? 0 : -Math.abs(Math.sin(walk)) * Math.min(3, r * 0.15);
   const x = e.x, y = e.y + bob;
   const lunge = e.attackAnim > 0 ? -Math.sin((e.attackAnim / 0.25) * Math.PI) * 8 : 0;
   const lean = frozen ? 0 : Math.sin(walk) * 0.05;
@@ -351,10 +365,22 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number): void {
     case 'shaman': drawShaman(ctx, r, e.cfg.color, pose); break;
     case 'elite_knight': drawKnight(ctx, r, e.cfg.color, pose); break;
     case 'boss_lich': drawLich(ctx, r, e.cfg.color, pose); break;
+    case 'shield_bearer': drawShieldBearer(ctx, r, e.cfg.color, pose); break;
+    case 'splitter': drawSplitter(ctx, r, e.cfg.color, pose); break;
+    case 'splitling': drawSplitling(ctx, r, e.cfg.color, pose); break;
+    case 'cleanser': drawCleanser(ctx, r, e.cfg.color, pose); break;
+    case 'armored': drawArmored(ctx, r, e.cfg.color, pose, defenseUp(e.kind, defState(e))); break;
+    case 'swarmer': drawSwarmer(ctx, r, e.cfg.color, pose); break;
+    case 'boss_golem': drawGolem(ctx, r, e.cfg.color, pose, e.shellBroken <= 0); break;
+    case 'boss_hydra': drawHydra(ctx, r, e.cfg.color, pose, e.stage); break;
+    case 'hydra_head': drawHydraHead(ctx, r, e.cfg.color, pose); break;
+    case 'dummy': drawDummy(ctx, r, e.cfg.color, pose); break;
     default: ctx.fillStyle = pose.c(e.cfg.color); ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
   ctx.restore();
   ctx.restore();
+
+  drawEnemyOverlays(ctx, e, x, y, t);
 
   // status visuals
   const st = e.st;
@@ -403,7 +429,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, t: number): void {
   if (st.weaken) { ctx.strokeStyle = STATUS_COLOR.weaken; ctx.setLineDash([4, 4]); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + 5, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
 
   // hp bar + icons (boss uses the top bar instead)
-  const boss = e.kind === 'boss_lich';
+  const boss = isBoss(e.kind);
   const barY = y - r - (e.kind === 'shaman' ? 22 : 14) - (boss ? 24 : 0);
   if (!boss) {
     const bw = Math.max(26, r * 2);
@@ -530,11 +556,29 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   label(ctx, `Wave ${Math.min(h.waveIdx + 1, h.waveTotal)}/${h.waveTotal}`, W - 20, 28 * u, 16 * u, 'right');
 
   // boss bar
-  const boss = w.enemies.find(e => e.kind === 'boss_lich' && !e.dead);
+  const boss = w.enemies.find(e => isBoss(e.kind) && !e.dead);
   if (boss) {
     const by = 40 * u;
-    bar(ctx, W / 2 - 220, by, 440, 16 * u, boss.hp / boss.maxHp, '#8b3ad8');
-    label(ctx, `${boss.cfg.name}  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, W / 2, by + 13 * u, 12 * u, 'center');
+    // Keep clear of the ward HP / charge block on the left and the wave / combo labels on the right.
+    const left = Math.max(W / 2 - 220, 20 + hpW + 100 * u);
+    const right = Math.min(W / 2 + 220, W - 20 - 110 * u);
+    const bw = Math.max(120, right - left);
+    const cx = left + bw / 2;
+    const fill = boss.kind === 'boss_golem' ? '#a09680' : boss.kind === 'boss_hydra' ? '#3f9f5a' : '#8b3ad8';
+    bar(ctx, left, by, bw, 16 * u, boss.hp / boss.maxHp, fill);
+    if (boss.kind === 'boss_hydra') {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      for (const f of [0.33, 0.66]) ctx.fillRect(left + bw * f - 1, by, 2, 16 * u);
+    }
+    label(ctx, `${boss.cfg.name}  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, cx, by + 13 * u, 12 * u, 'center');
+    if (boss.kind === 'boss_golem') {
+      const broken = boss.shellBroken > 0;
+      label(ctx, broken ? `SHELL BROKEN ${boss.shellBroken.toFixed(1)}s` : 'SHELL -75% (Shatter / Combust / Overload breaks it)', cx, by + 32 * u, 12 * u, 'center', broken ? '#ffb35a' : '#c8c2b0');
+    }
+  }
+  if (h.floor.hazard) {
+    const hz = HAZARD_INFO[h.floor.hazard];
+    label(ctx, `${hz.name}: ${hz.desc}`, 20, 76 * u, 13 * u, 'left', h.floor.hazard === 'rain' ? '#9cc4ff' : h.floor.hazard === 'heatwave' ? '#ffb070' : '#d4dce8');
   }
 
   // combo counter
@@ -572,7 +616,13 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   if (!h.hasShots) label(ctx, 'Spell has no damaging runes', W / 2, H - 34, 18 * u, 'center', '#ffb86b');
   else if (h.time < 6) label(ctx, 'Spell auto-casts - aim with the mouse', W / 2, H - 12, 14 * u, 'center', '#c4c9ee');
 
-  // aim line + crosshair
+  drawAim(ctx, h);
+}
+
+/** Aim line, crosshair and the damage vignette (the parts of the HUD the practice range keeps). */
+function drawAim(ctx: CanvasRenderingContext2D, h: HudState): void {
+  const u = h.ui;
+  const ready = h.hasShots && h.charge >= h.castTime;
   if (h.mouse.inside && !h.overlay) {
     const { x, y } = h.mouse;
     ctx.save();
@@ -614,5 +664,344 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   if (h.overlay) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(h.offX, 0, h.viewW, H);
     label(ctx, h.overlay.text, W / 2, H / 2 + 14, 54, 'center', h.overlay.good ? '#ffe27a' : '#ff6b6b');
+  }
+}
+
+function defState(e: Enemy): { frozen: boolean; weakened: boolean; shellBroken: number } {
+  return { frozen: e.st.freeze > 0, weakened: !!e.st.weaken, shellBroken: e.shellBroken };
+}
+
+// ---------------------------------------------------------------- new enemies (all face left, -x)
+
+function eyes(ctx: CanvasRenderingContext2D, x: number, y: number, gap: number, rad: number, col: string): void {
+  dots(ctx, x, y, gap, rad, col);
+  dots(ctx, x - rad * 0.3, y, gap, rad * 0.45, '#1a1a1a');
+}
+
+function drawShieldBearer(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const steel = p.c(col), dark = p.c('#34506f');
+  feet(ctx, r, 0.4, 0.34, dark, p);
+  ell(ctx, 0, 0, r * 0.9, r * 0.85, steel);
+  ell(ctx, 0, r * 0.3, r * 0.5, r * 0.4, p.c('#86a8d0'), false);
+  // helmet with a plume
+  ell(ctx, -r * 0.05, -r * 0.55, r * 0.55, r * 0.45, p.c('#8aa2c0'));
+  ctx.fillStyle = '#10141c'; ctx.fillRect(-r * 0.55, -r * 0.6, r * 0.8, r * 0.14);
+  poly(ctx, [r * 0.1, -r * 0.95, r * 0.55, -r * 1.2, r * 0.35, -r * 0.7], p.c('#d6544a'));
+  dots(ctx, -r * 0.4, -r * 0.55, r * 0.3, Math.max(1.4, r * 0.08), '#bfe6ff');
+}
+
+function drawSplitter(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const gel = p.c(col);
+  const squish = Math.sin(p.t * 5 + p.id) * 0.06;
+  ctx.save(); ctx.scale(1 + squish, 1 - squish);
+  ell(ctx, 0, r * 0.1, r * 0.98, r * 0.85, gel);
+  ctx.restore();
+  // three embryos that will burst out
+  const lobes: [number, number][] = [[-0.38, -0.12], [0.36, -0.05], [0, 0.38]];
+  ctx.lineWidth = 1;
+  for (const [lx, ly] of lobes) ell(ctx, lx * r, ly * r + r * 0.1, r * 0.3, r * 0.27, p.c('#e07ab5'));
+  // crack line down the middle
+  ctx.strokeStyle = 'rgba(255,235,250,0.8)'; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.8); ctx.lineTo(r * 0.12, -r * 0.2); ctx.lineTo(-r * 0.1, r * 0.4); ctx.lineTo(0, r * 0.9); ctx.stroke();
+  ctx.setLineDash([]); ctx.lineWidth = 1.5; ctx.strokeStyle = OUT;
+  eyes(ctx, -r * 0.55, -r * 0.35, r * 0.3, Math.max(1.8, r * 0.12), '#fff3a8');
+}
+
+function drawSplitling(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const hop = Math.abs(Math.sin(p.s * 1.3)) * r * 0.3;
+  ctx.translate(0, -hop);
+  ell(ctx, 0, 0, r * 0.95, r * 0.8, p.c(col));
+  ell(ctx, 0, r * 0.3, r * 0.5, r * 0.3, p.c('#f5b3d6'), false);
+  dots(ctx, -r * 0.5, -r * 0.15, r * 0.4, Math.max(1.4, r * 0.22), '#fff');
+}
+
+function drawCleanser(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const robe = p.c(col);
+  // flowing robe
+  poly(ctx, [-r * 0.5, -r * 0.3, r * 0.5, -r * 0.3, r * 1.0, r * 0.95, -r * 1.0, r * 0.95], robe);
+  poly(ctx, [-r * 0.15, -r * 0.2, r * 0.15, -r * 0.2, r * 0.3, r * 0.95, -r * 0.3, r * 0.95], p.c('#d8b24a'), false);
+  ell(ctx, 0, -r * 0.55, r * 0.42, r * 0.4, p.c('#f6e7c8'));
+  dots(ctx, -r * 0.2, -r * 0.58, r * 0.28, Math.max(1.4, r * 0.08), '#222');
+  // halo
+  ctx.save();
+  ctx.strokeStyle = '#fff6c0'; ctx.lineWidth = 2.5;
+  ctx.shadowColor = '#fff6c0'; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.ellipse(0, -r * 1.15, r * 0.5, r * 0.16, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  // cleansing orb in the front hand
+  const bob = Math.sin(p.t * 3 + p.id) * 2;
+  glow(ctx, -r * 0.95, r * 0.1 + bob, r * 0.7, '#fff6c0', 0.8);
+  ell(ctx, -r * 0.95, r * 0.1 + bob, r * 0.22, r * 0.22, '#ffffff');
+}
+
+function drawArmored(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose, up: boolean): void {
+  const plate = p.c(up ? '#aab4c4' : '#555b66'), plate2 = p.c(up ? '#8590a2' : '#3f444d');
+  feet(ctx, r, 0.4, 0.34, p.c('#3a3d44'), p);
+  ell(ctx, 0, 0, r * 0.95, r * 0.9, p.c(col));
+  // overlapping plates
+  poly(ctx, [-r * 0.9, -r * 0.2, -r * 0.2, -r * 0.8, r * 0.2, -r * 0.1, -r * 0.4, r * 0.5], plate);
+  poly(ctx, [r * 0.9, -r * 0.2, r * 0.25, -r * 0.8, -r * 0.1, r * 0.1, r * 0.5, r * 0.6], plate2);
+  poly(ctx, [-r * 0.6, r * 0.55, r * 0.6, r * 0.55, r * 0.45, r * 0.95, -r * 0.45, r * 0.95], plate);
+  // rivets
+  ctx.fillStyle = up ? '#e6ebf2' : '#777d88';
+  for (const [rx, ry] of [[-0.55, -0.15], [-0.1, -0.5], [0.55, 0.0], [0, 0.75]]) {
+    ctx.beginPath(); ctx.arc(rx * r, ry * r, Math.max(1.2, r * 0.07), 0, Math.PI * 2); ctx.fill();
+  }
+  // visored helm
+  ell(ctx, -r * 0.05, -r * 0.6, r * 0.5, r * 0.42, plate);
+  ctx.fillStyle = '#10141c'; ctx.fillRect(-r * 0.5, -r * 0.66, r * 0.75, r * 0.12);
+  if (!up) { // cracks while vulnerable
+    ctx.strokeStyle = 'rgba(255,200,120,0.9)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(-r * 0.6, -r * 0.1); ctx.lineTo(-r * 0.3, r * 0.15); ctx.lineTo(-r * 0.4, r * 0.4);
+    ctx.moveTo(r * 0.5, r * 0.0); ctx.lineTo(r * 0.2, r * 0.25); ctx.stroke();
+  }
+}
+
+function drawSwarmer(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const buzz = Math.sin(p.t * 60 + p.id) * 0.5;
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.beginPath(); ctx.ellipse(r * 0.1, -r * 0.9, r * 0.9, r * 0.35 * (1 + buzz), -0.5, 0, Math.PI * 2); ctx.fill();
+  ell(ctx, r * 0.2, 0, r * 0.95, r * 0.7, p.c(col));
+  ell(ctx, -r * 0.7, -r * 0.05, r * 0.55, r * 0.5, p.c('#8a2d1f'));
+  dots(ctx, -r * 0.85, -r * 0.15, r * 0.35, Math.max(1, r * 0.2), '#ffe14a');
+  poly(ctx, [r * 1.1, 0, r * 1.7, r * 0.1, r * 1.1, r * 0.3], p.c('#e8dfc4'), false); // stinger
+}
+
+function drawGolem(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose, shellUp: boolean): void {
+  const stone = p.c(shellUp ? col : '#6d675c'), dark = p.c('#4f4a42');
+  const stomp = p.atk * r * 0.2;
+  feet(ctx, r, 0.45, 0.4, dark, p);
+  // arms (boulder fists)
+  for (const sd of [-1, 1]) {
+    const fx = sd * r * 1.05, fy = r * 0.35 + (sd < 0 ? stomp : 0);
+    ctx.strokeStyle = OUT; ctx.lineWidth = r * 0.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sd * r * 0.65, -r * 0.3); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.strokeStyle = stone; ctx.lineWidth = r * 0.38;
+    ctx.beginPath(); ctx.moveTo(sd * r * 0.65, -r * 0.3); ctx.lineTo(fx, fy); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = OUT;
+    ell(ctx, fx, fy, r * 0.3, r * 0.28, stone);
+  }
+  // torso
+  poly(ctx, [-r * 0.8, -r * 0.5, -r * 0.4, -r * 0.9, r * 0.45, -r * 0.85, r * 0.85, -r * 0.45, r * 0.8, r * 0.5, r * 0.4, r * 0.9, -r * 0.45, r * 0.9, -r * 0.85, r * 0.45], stone);
+  // glowing core + cracks
+  const pulse = 0.5 + 0.5 * Math.sin(p.t * 4);
+  glow(ctx, 0, r * 0.1, r * (shellUp ? 0.5 : 0.95), '#ff9a3a', shellUp ? 0.25 + pulse * 0.1 : 0.7 + pulse * 0.2);
+  ctx.strokeStyle = shellUp ? 'rgba(255,170,80,0.45)' : '#ffb35a'; ctx.lineWidth = shellUp ? 1.2 : 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.2, -r * 0.7); ctx.lineTo(0, -r * 0.2); ctx.lineTo(-r * 0.3, r * 0.2); ctx.lineTo(-r * 0.1, r * 0.7);
+  ctx.moveTo(r * 0.1, -r * 0.2); ctx.lineTo(r * 0.5, r * 0.1); ctx.lineTo(r * 0.4, r * 0.6);
+  ctx.stroke();
+  if (shellUp) {
+    // heavy shell plates, bolted on
+    const plate = p.c('#a8a294');
+    poly(ctx, [-r * 0.9, -r * 0.35, -r * 0.35, -r * 0.8, -r * 0.1, -r * 0.1, -r * 0.55, r * 0.35, -r * 0.95, r * 0.15], plate);
+    poly(ctx, [r * 0.9, -r * 0.35, r * 0.3, -r * 0.82, r * 0.05, -r * 0.05, r * 0.5, r * 0.45, r * 0.95, r * 0.2], plate);
+    poly(ctx, [-r * 0.5, r * 0.45, r * 0.5, r * 0.45, r * 0.35, r * 0.88, -r * 0.35, r * 0.88], plate);
+    ctx.fillStyle = '#d8d2c0';
+    for (const [rx, ry] of [[-0.6, -0.4], [0.55, -0.4], [0, 0.65], [-0.7, 0.05], [0.7, 0.1]]) {
+      ctx.beginPath(); ctx.arc(rx * r, ry * r, Math.max(2, r * 0.05), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // head
+  poly(ctx, [-r * 0.4, -r * 0.8, -r * 0.2, -r * 1.2, r * 0.3, -r * 1.15, r * 0.4, -r * 0.8], stone);
+  glow(ctx, -r * 0.1, -r * 0.95, r * 0.28, '#ff7a2f', 0.9);
+  dots(ctx, -r * 0.2, -r * 0.97, r * 0.26, Math.max(2, r * 0.06), '#ffd08a');
+}
+
+function drawHydra(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose, stage: number): void {
+  const scale = p.c(col), belly = p.c('#a8d890'), dark = p.c('#2b6a40');
+  feet(ctx, r, 0.4, 0.34, dark, p);
+  // back spikes
+  for (let i = 0; i < 5; i++) {
+    const sx = r * (-0.5 + i * 0.3);
+    poly(ctx, [sx - r * 0.12, -r * 0.7, sx, -r * 1.05, sx + r * 0.12, -r * 0.7], p.c('#e2d8a0'));
+  }
+  ell(ctx, r * 0.15, 0, r * 1.0, r * 0.82, scale);
+  ell(ctx, r * 0.1, r * 0.3, r * 0.65, r * 0.4, belly, false);
+  // neck stubs: one more pair of sprouting necks per stage
+  ctx.lineCap = 'round';
+  for (let i = 0; i < stage * 2; i++) {
+    const sd = i % 2 ? 1 : -1, k = Math.floor(i / 2);
+    const bx = r * (0.1 + k * 0.35), by = sd * r * 0.55;
+    const tx = bx - r * 0.2, ty = sd * r * 1.25 + Math.sin(p.t * 2 + i) * 3;
+    ctx.strokeStyle = OUT; ctx.lineWidth = r * 0.34; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.strokeStyle = scale; ctx.lineWidth = r * 0.22; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;
+  }
+  // main head
+  const jaw = p.atk * r * 0.2;
+  poly(ctx, [-r * 0.55, -r * 0.25, -r * 1.35, -r * 0.05 - jaw * 0.3, -r * 0.55, r * 0.15], p.c('#58b070'));
+  poly(ctx, [-r * 0.55, r * 0.1, -r * 1.2, r * 0.2 + jaw, -r * 0.5, r * 0.35], p.c('#4a9a60'));
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 3; i++) poly(ctx, [-r * (0.7 + i * 0.18), r * 0.1, -r * (0.65 + i * 0.18), r * 0.25, -r * (0.6 + i * 0.18), r * 0.1], '#fff', false);
+  dots(ctx, -r * 0.65, -r * 0.2, r * 0.22, Math.max(2, r * 0.07), '#ffe14a');
+}
+
+function drawHydraHead(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  const bob = Math.sin(p.t * 2.5 + p.id) * 2;
+  ctx.fillStyle = p.c('#2b6a40');
+  ell(ctx, r * 0.6, r * 0.9, r * 1.1, r * 0.45, p.c('#2b6a40')); // base mound
+  ctx.save(); ctx.translate(0, bob);
+  const jaw = p.atk * r * 0.4;
+  ell(ctx, 0, 0, r * 0.85, r * 0.7, p.c(col));
+  poly(ctx, [-r * 0.6, -r * 0.2, -r * 1.35, -r * 0.1 - jaw * 0.3, -r * 0.6, r * 0.1], p.c('#78c868'));
+  poly(ctx, [-r * 0.6, r * 0.1, -r * 1.2, r * 0.2 + jaw, -r * 0.55, r * 0.4], p.c('#5ba850'));
+  glow(ctx, -r * 1.1, r * 0.05, r * 0.5, '#b8ff5a', 0.5 + p.atk * 0.5); // acid
+  dots(ctx, -r * 0.45, -r * 0.3, r * 0.3, Math.max(1.6, r * 0.14), '#ffe14a');
+  ctx.restore();
+}
+
+function drawDummy(ctx: CanvasRenderingContext2D, r: number, col: string, p: Pose): void {
+  ctx.fillStyle = p.c('#6b4a28'); ctx.fillRect(-r * 0.12, -r * 0.2, r * 0.24, r * 1.2); ctx.strokeRect(-r * 0.12, -r * 0.2, r * 0.24, r * 1.2);
+  ctx.fillRect(-r * 0.9, -r * 0.1, r * 1.8, r * 0.2); ctx.strokeRect(-r * 0.9, -r * 0.1, r * 1.8, r * 0.2);
+  ell(ctx, 0, -r * 0.55, r * 0.95, r * 0.95, p.c('#e8dfc4'));
+  ell(ctx, 0, -r * 0.55, r * 0.65, r * 0.65, p.c('#c0392b'), false);
+  ell(ctx, 0, -r * 0.55, r * 0.35, r * 0.35, p.c('#e8dfc4'), false);
+  ell(ctx, 0, -r * 0.55, r * 0.15, r * 0.15, p.c(col), false);
+}
+
+/** Shield Bearer shield (bubble + plate) or the regrow ring while it is down; Cleanser pulse range. */
+function drawEnemyOverlays(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, t: number): void {
+  const r = e.r;
+  if (e.cfg.shield) {
+    if (e.shield) {
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4 + e.id);
+      ctx.save();
+      ctx.fillStyle = `rgba(140,200,255,${0.14 + 0.06 * pulse})`;
+      ctx.strokeStyle = `rgba(190,228,255,${0.7 + 0.2 * pulse})`; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(x, y, r * 1.35, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      // kite shield plate on the near side
+      const sx = x - r * 1.05;
+      ctx.fillStyle = '#7fb4e8'; ctx.strokeStyle = '#e4f3ff'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx - r * 0.3, y - r * 0.7); ctx.lineTo(sx + r * 0.3, y - r * 0.7); ctx.lineTo(sx + r * 0.3, y + r * 0.1);
+      ctx.lineTo(sx, y + r * 0.85); ctx.lineTo(sx - r * 0.3, y + r * 0.1); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#e4f3ff'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx, y - r * 0.6); ctx.lineTo(sx, y + r * 0.6); ctx.moveTo(sx - r * 0.22, y - r * 0.1); ctx.lineTo(sx + r * 0.22, y - r * 0.1); ctx.stroke();
+      ctx.restore();
+    } else {
+      // broken: faint regrow dial
+      const k = Math.max(0, Math.min(1, (t - e.lastHit) / SHIELD_REGROW));
+      ctx.save();
+      ctx.strokeStyle = 'rgba(160,210,255,0.55)'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(x, y, r * 1.35, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k); ctx.stroke();
+      ctx.restore();
+    }
+    if (e.shieldFlash > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, e.shieldFlash / 0.3);
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.arc(x, y, r * 1.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  if (e.cfg.pulse) {
+    const soon = e.abilityCd < 0.7 && e.st.freeze <= 0;
+    ctx.save();
+    ctx.setLineDash([5, 7]);
+    ctx.strokeStyle = soon ? 'rgba(255,246,192,0.75)' : 'rgba(255,246,192,0.2)';
+    ctx.lineWidth = soon ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.arc(x, y, e.cfg.pulse.radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+  }
+  if (e.cfg.stomp && e.abilityCd < 0.9 && e.st.freeze <= 0) {
+    // stomp telegraph: the shockwave's reach
+    const k = 1 - e.abilityCd / 0.9;
+    ctx.save();
+    ctx.setLineDash([10, 8]);
+    ctx.strokeStyle = `rgba(255,120,70,${0.25 + 0.5 * k})`; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(x, y, STOMP_RANGE, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = `rgba(255,90,50,${0.05 * k})`; ctx.fill();
+    ctx.restore();
+  }
+  if (e.kind === 'boss_golem' && e.shellBroken > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#ffb35a'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y, r * 1.2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (e.shellBroken / SHELL_BREAK_TIME)); ctx.stroke();
+    ctx.restore();
+  }
+  if (e.trait) {
+    const info = TRAIT_INFO[e.trait];
+    const pulse = 0.5 + 0.5 * Math.sin(t * 5);
+    glow(ctx, x, y, r * 1.8, info.color, 0.18 + 0.12 * pulse);
+    ctx.save();
+    ctx.strokeStyle = info.color; ctx.lineWidth = 2; ctx.globalAlpha = 0.6 + 0.3 * pulse;
+    if (e.trait === 'reflective') {
+      ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, r + 11, 0.3, 1.3); ctx.stroke();
+    } else if (e.trait === 'hasted') {
+      for (let i = 0; i < 3; i++) {
+        const yy = y + (i - 1) * r * 0.7;
+        ctx.beginPath(); ctx.moveTo(x + r * 1.1, yy); ctx.lineTo(x + r * (1.8 + 0.4 * ((i + Math.floor(t * 12)) % 2)), yy); ctx.stroke();
+      }
+      ctx.beginPath(); ctx.arc(x, y, r + 6, 0, Math.PI * 2); ctx.stroke();
+    } else if (e.trait === 'regenerating') {
+      ctx.fillStyle = info.color;
+      for (let i = 0; i < 3; i++) {
+        const ph = (t * 0.9 + i / 3 + e.id * 0.1) % 1, px = x + (i - 1) * r * 0.7, py = y - r * 0.2 - ph * r * 1.2;
+        ctx.fillRect(px - 1.5, py - 5, 3, 10); ctx.fillRect(px - 5, py - 1.5, 10, 3);
+      }
+      ctx.beginPath(); ctx.arc(x, y, r + 6, 0, Math.PI * 2); ctx.stroke();
+    } else {
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.arc(x, y, r + 7, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+    ctx.strokeText(info.label, x, y + r + 16);
+    ctx.fillStyle = info.color; ctx.fillText(info.label, x, y + r + 16);
+  }
+}
+
+// ---------------------------------------------------------------- hazard visuals
+
+/** Fog bank over the far side of the arena (drawn before enemies so revealed enemies stand out). */
+function drawFog(ctx: CanvasRenderingContext2D, h: HudState): void {
+  const x0 = FOG_X - 40, x1 = h.offX + h.viewW;
+  const g = ctx.createLinearGradient(x0, 0, x0 + 110, 0);
+  g.addColorStop(0, 'rgba(200,210,225,0)');
+  g.addColorStop(1, 'rgba(200,210,225,0.62)');
+  ctx.fillStyle = g; ctx.fillRect(x0, 0, 110, H);
+  ctx.fillStyle = 'rgba(200,210,225,0.62)'; ctx.fillRect(x0 + 110, 0, Math.max(0, x1 - x0 - 110), H);
+  for (let i = 0; i < 7; i++) {
+    const bx = FOG_X + 60 + ((i * 137 + h.time * 14) % 420) - 60, by = 40 + ((i * 83) % 520) + Math.sin(h.time * 0.5 + i) * 20;
+    const rg = ctx.createRadialGradient(bx, by, 0, bx, by, 110);
+    rg.addColorStop(0, 'rgba(235,240,248,0.5)');
+    rg.addColorStop(1, 'rgba(235,240,248,0)');
+    ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(bx, by, 110, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/** Rain streaks / heat shimmer drawn over the field, under the HUD. */
+function drawHazardOverlay(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
+  const t = h.time;
+  if (w.hazard === 'rain') {
+    ctx.fillStyle = 'rgba(40,80,150,0.1)'; ctx.fillRect(h.offX, 0, h.viewW, H);
+    ctx.strokeStyle = 'rgba(180,210,255,0.4)'; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < 110; i++) {
+      const x = h.offX + ((i * 97.3 + t * 140) % (h.viewW + 120)) - 60;
+      const y = ((i * 53.7 + t * (620 + (i % 5) * 60)) % (H + 60)) - 30;
+      ctx.moveTo(x, y); ctx.lineTo(x - 5, y + 16);
+    }
+    ctx.stroke();
+  } else if (w.hazard === 'heatwave') {
+    const g = ctx.createLinearGradient(0, H, 0, 0);
+    g.addColorStop(0, 'rgba(255,110,30,0.22)');
+    g.addColorStop(1, 'rgba(255,150,60,0.04)');
+    ctx.fillStyle = g; ctx.fillRect(h.offX, 0, h.viewW, H);
+    ctx.strokeStyle = 'rgba(255,200,130,0.18)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const by = H - ((t * 40 + i * 100) % H);
+      ctx.beginPath();
+      for (let x = h.offX; x <= h.offX + h.viewW; x += 24) {
+        const yy = by + Math.sin(x * 0.03 + t * 3 + i) * 5;
+        if (x === h.offX) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    // warning edge just before the next ignition
+    if (w.hazardT < 0.6) {
+      ctx.fillStyle = `rgba(255,120,30,${0.18 * (1 - w.hazardT / 0.6)})`; ctx.fillRect(h.offX, 0, h.viewW, H);
+    }
   }
 }
