@@ -2,10 +2,12 @@ import { BOONS } from '../data/boons';
 import { CATALOG, SOURCE_ID } from '../data/runes';
 import type { MapNode } from '../types';
 import type { App } from './app';
-import { findNode } from './map';
+import { FUSIONS } from '../data/fusions';
+import { findNode, generateMap } from './map';
 import { newRun } from './state';
+import { clearTelemetry, exportTelemetry, loadTelemetry } from './telemetry';
 
-const SCREENS_WITHOUT_RUN = ['title', 'school', 'end'];
+const SCREENS_WITHOUT_RUN = ['title', 'school', 'ability', 'history', 'settings', 'end'];
 const KIND_LABEL: Record<string, string> = {
   battle: 'Battle', elite: 'Elite', shop: 'Shop', forge: 'Forge', shrine: 'Shrine', event: 'Event', treasure: 'Treasure', rest: 'Rest', boss: 'Boss',
 };
@@ -98,6 +100,16 @@ export function installDevPanel(app: App): void {
       event: go.event, treasure: go.treasure, rest: go.rest }[node.kind];
     target();
   };
+  /** Switch to act `a` (1..3): that act's seeded map, row 1, nothing visited. */
+  const jumpAct = (a: number): void => {
+    ensureRun();
+    app.visited = [];
+    app.sold = [];
+    app.ns = {};
+    app.lastResult = null;
+    app.setRun({ ...app.run, act: a, map: generateMap(app.run.seed, a), at: null, floor: 1 });
+    app.goto.map();
+  };
   /** The active node, or (when none, or of the wrong kind) the first node of `kind`, made active. */
   const currentOr = (kind?: MapNode['kind']): void => {
     ensureRun();
@@ -112,7 +124,7 @@ export function installDevPanel(app: App): void {
     panel.innerHTML = '';
     const run = app.run;
 
-    mk('h4', panel, `${app.current} | gold ${run.gold} | mana ${run.maxMana} | row ${run.floor}`);
+    mk('h4', panel, `${app.current} | gold ${run.gold} | mana ${run.maxMana} | act ${run.act} row ${run.floor}`);
 
     if (app.current === 'battle') {
       mk('h4', panel, 'Battle');
@@ -127,6 +139,10 @@ export function installDevPanel(app: App): void {
       }
     }
 
+    mk('h4', panel, 'Act (own seeded map, back to row 1)');
+    const acts = row(panel);
+    for (const a of [1, 2, 3]) btn(acts, `Act ${a}`, () => jumpAct(a), run.act === a ? 'cur' : '');
+
     mk('h4', panel, 'Jump to node');
     for (const nodes of run.map.rows) {
       const line = row(panel);
@@ -138,9 +154,14 @@ export function installDevPanel(app: App): void {
     const sc = row(panel);
     btn(sc, 'Reward', () => { currentOr(); app.goto.reward(); });
     btn(sc, 'Elite blessing', () => { currentOr('elite'); app.goto.blessing(); });
-    btn(sc, 'Victory', () => { ensureRun(); app.goto.end(true); });
-    btn(sc, 'Defeat', () => { ensureRun(); app.goto.end(false); });
+    btn(sc, 'Victory', () => { ensureRun(); app.goto.end(true, false); });
+    btn(sc, 'Defeat', () => { ensureRun(); app.goto.end(false, false); });
     btn(sc, 'Map', () => { ensureRun(); app.goto.map(); });
+    btn(sc, 'Act card', () => { ensureRun(); app.goto.act(); });
+    btn(sc, 'Ability', () => { ensureRun(); app.schoolPending = app.run.school; app.goto.ability(); });
+    btn(sc, 'Fuse (forge)', () => { currentOr('forge'); app.goto.forge('fuse'); });
+    btn(sc, 'History', () => app.goto.history());
+    btn(sc, 'Settings', () => app.openSettings(() => app.goto.map()));
 
     mk('h4', panel, 'Grant');
     const g = row(panel);
@@ -150,6 +171,34 @@ export function installDevPanel(app: App): void {
     mana.min = '0';
     mana.value = String(run.maxMana);
     btn(g, 'Set max mana', () => mutate(() => app.setRun({ ...app.run, maxMana: Math.max(0, Math.round(Number(mana.value) || 0)) })));
+
+    btn(g, 'Fusion ingredients', () => mutate(() => {
+      let owned = app.run.owned;
+      for (const f of FUSIONS) {
+        for (const id of [f.a, f.b]) {
+          if (owned.some((o) => o.defId === id) || !CATALOG[id]) continue;
+          let n = owned.length;
+          while (owned.some((o) => o.uid === `${id}-${n}`)) n++;
+          owned = [...owned, { uid: `${id}-${n}`, defId: id }];
+        }
+      }
+      app.setRun({ ...app.run, owned });
+    }));
+
+    mk('h4', panel, 'Telemetry');
+    const tl = row(panel);
+    mk('span', tl, `${loadTelemetry().length} runs `);
+    btn(tl, 'Export telemetry', () => {
+      const url = URL.createObjectURL(new Blob([exportTelemetry()], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'chain-spell-telemetry.json';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    btn(tl, 'Clear', () => { clearTelemetry(); render(); });
 
     mk('h4', panel, 'Add rune');
     const rf = row(panel);

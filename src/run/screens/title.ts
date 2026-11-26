@@ -1,7 +1,7 @@
 import { COLOR_HEX } from '../../types';
 import type { App } from '../app';
 import { MAP_ROWS } from '../map';
-import { loadRun, todayString } from '../state';
+import { loadRun, takeDiscardNotice, todayString } from '../state';
 import { button, el } from '../ui';
 
 export function titleScreen(app: App): void {
@@ -19,17 +19,20 @@ export function titleScreen(app: App): void {
     el('h1', 'rn-logo', 'Chain Spell', box);
     el('p', 'rn-pitch',
       'Wire runes into a branching spell graph, then unleash it on waves of enemies in real time. '
-      + 'Choose your path across ten rows. One circle. Build something terrible and wonderful.', box);
+      + 'Climb three acts and three bosses. One circle. Build something terrible and wonderful.', box);
     const how = el('ol', 'rn-how', undefined, box);
     ['Build a spell from runes', 'Aim and cast against waves', 'Pick your path: battles, shops, forges, shrines'].forEach((t, i) => {
       const li = el('li', undefined, undefined, how);
       el('span', 'rn-how-n', String(i + 1), li);
       el('span', undefined, t, li);
     });
-    const row = el('div', 'rn-row', undefined, box);
     const saved = loadRun();
+    if (takeDiscardNotice()) {
+      el('p', 'rn-note rn-warn', 'A saved run from an older version (10-row map) was discarded: runs now have three acts.', box);
+    }
+    const row = el('div', 'rn-row', undefined, box);
     if (saved) {
-      button(`Continue run (row ${Math.min(saved.run.floor, MAP_ROWS)})`, 'rn-btn primary', () => {
+      button(`Continue run (act ${saved.run.act}, row ${Math.min(saved.run.floor, MAP_ROWS)})`, 'rn-btn primary', () => {
         app.setRun(saved.run);
         app.visited = saved.visited;
         app.sold = saved.sold;
@@ -41,5 +44,8 @@ export function titleScreen(app: App): void {
     const today = todayString();
     const daily = button(`Daily run (${today})`, 'rn-btn', () => { app.dailyPending = today; app.goto.school(); }, row);
     daily.title = 'Everyone gets the same seed today: same map, bosses and offers. You still pick your school.';
+    const row2 = el('div', 'rn-row', undefined, box);
+    button('History', 'rn-btn', () => app.goto.history(), row2);
+    button('⚙ Settings', 'rn-btn', () => app.openSettings(() => app.goto.title()), row2);
   });
 }

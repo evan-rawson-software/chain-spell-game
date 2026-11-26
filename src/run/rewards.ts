@@ -3,11 +3,11 @@ import { CATALOG, SOURCE_ID } from '../data/runes';
 import type { BoonDef, FloorDef, Reward, Rarity, RuneCatalog, MapNodeKind } from '../types';
 import { createRng, type Rng } from './rng';
 
-type DropRarity = Exclude<Rarity, 'starter'>;
+type DropRarity = Exclude<Rarity, 'starter' | 'fused'>;
 
-/** Rarity weights by floor (1..10) and floor kind. */
+/** Rarity weights by difficulty depth (FloorDef.floor, 1..18) and floor kind. */
 export function rarityWeights(floor: FloorDef): Record<DropRarity, number> {
-  const t = (Math.min(10, Math.max(1, floor.floor)) - 1) / 9; // 0..1
+  const t = (Math.min(18, Math.max(1, floor.floor)) - 1) / 17; // 0..1
   let w = { common: 70 - 30 * t, uncommon: 26 + 4 * t, rare: 4 + 26 * t };
   if (floor.kind !== 'normal') w = { common: w.common * 0.3, uncommon: w.uncommon, rare: w.rare * 2 + 10 };
   return w;
@@ -20,7 +20,7 @@ export const REWARD_PICKS = 2;
 export const ELITE_BLESSINGS = 3;
 
 export function rollRewards(floor: FloorDef, rng: Rng, count: number = REWARD_OFFER, catalog: RuneCatalog = CATALOG): Reward[] {
-  const pool = Object.values(catalog).filter((d) => d.rarity !== 'starter' && d.id !== SOURCE_ID);
+  const pool = Object.values(catalog).filter((d) => d.rarity !== 'starter' && d.rarity !== 'fused' && d.id !== SOURCE_ID);
   const weights = rarityWeights(floor);
   const runeCount = Math.max(1, count);
 
@@ -36,10 +36,10 @@ export function rollRewards(floor: FloorDef, rng: Rng, count: number = REWARD_OF
   return out;
 }
 
-/** Gold earned for clearing a battle or elite on `row` (before the gold multiplier). */
-export function goldReward(kind: MapNodeKind, row: number): number {
-  if (kind === 'elite') return 40 + 4 * row;
-  if (kind === 'battle') return 15 + 3 * row;
+/** Gold earned for clearing a battle or elite at difficulty depth `depth` (1..18; before the gold multiplier). */
+export function goldReward(kind: MapNodeKind, depth: number): number {
+  if (kind === 'elite') return 40 + 3 * depth;
+  if (kind === 'battle') return 15 + 2 * depth;
   return 0;
 }
 

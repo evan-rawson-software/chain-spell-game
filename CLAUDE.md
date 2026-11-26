@@ -1,8 +1,9 @@
 # CLAUDE.md
 
 Chain Spell is a roguelite spell-builder prototype. The player wires runes into a spell graph, then
-aims that spell against real-time enemy waves across a 10-row branching map (battles, elites,
-shops, forges, shrines, boss), earning runes, gold, forge upgrades and blessings/curses. **DESIGN.md is the game spec**; read it before changing game rules.
+aims that spell against real-time enemy waves across 3 acts of 6-row branching maps (battles,
+elites, shops, forges, shrines, events, treasure, rest, an act boss), earning runes, gold, forge
+upgrades, fusions and blessings/curses. **DESIGN.md is the game spec**; read it before changing game rules.
 
 Live build: https://evan-rawson-software.github.io/chain-spell-game/
 
@@ -28,11 +29,12 @@ TypeScript + Vite, no framework. Canvas 2D for battles, plain DOM + inline SVG f
 | `src/types.ts` | Shared data types: colors, runes, modifiers, spell graph, cast plan, floors, run state |
 | `src/contracts.ts` | Public API each module exports (`SpellEngine`, `MountEditor`, `MountBattle`) |
 | `src/spell/` | Pure spell engine: placement, color merging, validation, compiling a graph into a `CastPlan` |
-| `src/data/` | Rune catalog (`runes.ts`), schools (`schools.ts`), blessings/curses (`boons.ts`) |
+| `src/data/` | Rune catalog (`runes.ts`), schools (`schools.ts`), blessings/curses (`boons.ts`), fusion recipes (`fusions.ts`) |
 | `src/editor/` | Rune editor UI: graph by level, placement previews, inventory, live spell stats |
 | `src/battle/` | Real-time arena: enemies, projectiles, statuses, reactions (`reactions.ts`), juice, HUD; `dev.ts` has demo data |
-| `src/audio/` | Sound effects: `sfx(name)`, mute; clips in `public/sfx/` |
-| `src/run/` | Run state, map, floors, seeded rewards, shop/forge/shrine, localStorage save, screen flow (`startApp`) |
+| `src/audio/` | Sound effects `sfx(name)` and music `music(track)`, volumes from settings; clips in `public/sfx/`, loops in `public/music/` (built by `tools/build-sfx.py` / `tools/build-music.py`) |
+| `src/settings.ts` | Player settings (volumes, shake, number size, colorblind) in localStorage; `getSettings`/`setSettings`/`onSettings` |
+| `src/run/` | Run state, acts/map, floors, seeded rewards, node screens, loadouts, history, telemetry, settings screen, localStorage save (`chain-spell-run-v3`), screen flow (`startApp`) |
 | `src/main.ts` | Entry point: `startApp(#app)` |
 
 Data flow: `run` owns `RunState`. The editor edits `graph` through the spell engine, then
@@ -64,6 +66,8 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
   `src/run/state.ts`); cast time is the in-combat cost. Battles reward gold and runes (pick 2 of 5);
   elites and shrines give blessings; shops sell runes, forging and curse removal. Ward HP resets
   each floor.
+- Socket bonuses (`RuneDef.socketBonus`) switch on extra mods when an input is fed by a matching
+  output; share codes (`encodeSpell`/`decodeSpell`) are in `src/spell/`.
 - Keystones (`RuneDef.keystone`) are shotless terminals that turn on a combat rule; `CastPlan.keystones`
   lists them and `src/battle/keystones.ts` implements them.
 - Reactions: a hit checks the enemy's statuses before applying its own (`src/battle/reactions.ts`).

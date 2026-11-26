@@ -1,8 +1,12 @@
 /**
- * Sound effects. Every module plays sounds only through `sfx(name)`.
+ * Sound effects and music. Every module plays sounds only through `sfx(name)` and `music(track)`.
  * Safe to call at any time: before audio is unlocked by a user gesture, while muted,
- * or before the files have loaded, it does nothing.
+ * or before the files have loaded, sfx do nothing; music requests are remembered and start
+ * once audio is unlocked and the track has loaded.
  */
+
+import type { MusicTrack } from '../contracts';
+import { getSettings, onSettings } from '../settings';
 
 export type SfxName =
   // UI / run flow
@@ -98,13 +102,16 @@ const DEFS: Record<SfxName, Def> = {
 };
 
 const MUTE_KEY = 'chain-spell-muted';
-const MASTER = 0.6;
+const MUSIC_FADE = 1;
+const MUSIC_VOL = 0.7;
 
 let muted = false;
 try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch { /* ignore */ }
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
+let sfxBus: GainNode | null = null;
+let musicBus: GainNode | null = null;
 let unlockBound = false;
 let loadStarted = false;
 const buffers = new Map<string, AudioBuffer>();
@@ -134,11 +141,16 @@ function unlock(): void {
       if (!Ctor) return;
       ctx = new Ctor();
       master = ctx.createGain();
-      master.gain.value = MASTER;
       master.connect(ctx.destination);
+      sfxBus = ctx.createGain();
+      sfxBus.connect(master);
+      musicBus = ctx.createGain();
+      musicBus.connect(master);
+      applyLevels();
     }
     if (ctx.state === 'suspended') void ctx.resume();
     void loadAll();
+    applyMusic();
   } catch { /* ignore */ }
 }
 
@@ -152,7 +164,7 @@ bindUnlock();
 
 /** Play a sound effect. */
 export function sfx(name: SfxName, opts: SfxOptions = {}): void {
-  if (muted || !ctx || !master || ctx.state !== 'running') return;
+  if (muted || !ctx || !sfxBus || ctx.state !== 'running') return;
   try {
     const def = DEFS[name];
     if (!def) return;
@@ -169,7 +181,7 @@ export function sfx(name: SfxName, opts: SfxOptions = {}): void {
     const g = ctx.createGain();
     g.gain.value = (def.vol ?? 0.7) * Math.max(0, Math.min(1, opts.volume ?? 1));
     src.connect(g);
-    g.connect(master);
+    g.connect(sfxBus);
     active.set(name, (active.get(name) ?? 0) + 1);
     src.onended = () => {
       active.set(name, Math.max(0, (active.get(name) ?? 1) - 1));
@@ -180,8 +192,94 @@ export function sfx(name: SfxName, opts: SfxOptions = {}): void {
   } catch { /* ignore */ }
 }
 
+function applyLevels(): void {
+  if (!ctx || !master || !sfxBus || !musicBus) return;
+  const s = getSettings();
+  const t = ctx.currentTime;
+  master.gain.setTargetAtTime(muted ? 0 : s.master, t, 0.02);
+  sfxBus.gain.setTargetAtTime(s.sfx, t, 0.02);
+  musicBus.gain.setTargetAtTime(s.music * MUSIC_VOL, t, 0.02);
+}
+onSettings(applyLevels);
+
+// ---- music ----
+let wanted: MusicTrack | null = null;
+let playing: { track: MusicTrack; src: AudioBufferSourceNode; gain: GainNode } | null = null;
+const trackBuffers = new Map<MusicTrack, AudioBuffer>();
+const trackLoads = new Map<MusicTrack, Promise<AudioBuffer | null>>();
+
+function loadTrack(track: MusicTrack): Promise<AudioBuffer | null> {
+  const c = ctx;
+  if (!c) return Promise.resolve(null);
+  let p = trackLoads.get(track);
+  if (!p) {
+    p = (async () => {
+      try {
+        const res = await fetch(`./music/${track}.wav`);
+        if (!res.ok) return null;
+        const buf = await c.decodeAudioData(await res.arrayBuffer());
+        trackBuffers.set(track, buf);
+        return buf;
+      } catch { return null; }
+    })();
+    trackLoads.set(track, p);
+    void p.then((b) => { if (!b) trackLoads.delete(track); });
+  }
+  return p;
+}
+
+function fadeOutAndStop(p: NonNullable<typeof playing>): void {
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  p.gain.gain.cancelScheduledValues(t);
+  p.gain.gain.setValueAtTime(p.gain.gain.value, t);
+  p.gain.gain.linearRampToValueAtTime(0, t + MUSIC_FADE);
+  p.src.stop(t + MUSIC_FADE + 0.05);
+  p.src.onended = () => { p.src.disconnect(); p.gain.disconnect(); };
+}
+
+function startTrack(track: MusicTrack, buf: AudioBuffer): void {
+  if (!ctx || !musicBus) return;
+  const old = playing;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  src.loop = true;
+  const gain = ctx.createGain();
+  const t = ctx.currentTime;
+  gain.gain.setValueAtTime(0, t);
+  gain.gain.linearRampToValueAtTime(1, t + MUSIC_FADE);
+  src.connect(gain);
+  gain.connect(musicBus);
+  src.start();
+  playing = { track, src, gain };
+  if (old) fadeOutAndStop(old);
+}
+
+function applyMusic(): void {
+  if (!ctx || ctx.state === 'closed') return;
+  if (wanted === null) {
+    if (playing) { fadeOutAndStop(playing); playing = null; }
+    return;
+  }
+  if (playing?.track === wanted) return;
+  const track = wanted;
+  const ready = trackBuffers.get(track);
+  if (ready) { startTrack(track, ready); return; }
+  void loadTrack(track).then((buf) => {
+    if (buf && wanted === track && playing?.track !== track) startTrack(track, buf);
+  });
+}
+
+/** Play a looping music track (crossfaded); `null` fades out. Requesting the current track is a no-op. */
+export function music(track: MusicTrack | null): void {
+  if (track === wanted) return;
+  wanted = track;
+  try { applyMusic(); } catch { /* ignore */ }
+}
+
 export function setMuted(m: boolean): void {
   muted = m;
+  applyLevels();
   try { localStorage.setItem(MUTE_KEY, m ? '1' : '0'); } catch { /* ignore */ }
 }
 

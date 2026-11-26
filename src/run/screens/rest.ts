@@ -12,7 +12,7 @@ export function restScreen(app: App): void {
   app.show((s) => {
     s.classList.add('rn-center');
     const box = el('div', 'rn-rewardbox', undefined, s);
-    el('h2', 'rn-h2', `Rest - ${rowLabel(node.row)}`, box);
+    el('h2', 'rn-h2', `Rest - ${rowLabel(node.row, app.run.act)}`, box);
     el('p', 'rn-sub', 'A quiet clearing. Choose how to spend the time.', box);
     const candidates = app.run.owned.filter((o) => !o.plus);
     const inGraph = new Set(app.run.graph.nodes.map((n) => n.uid));

@@ -32,7 +32,7 @@ export interface EnemyCfg {
   /** melee: attack on contact with cooldown */
   melee?: { dmg: number; cd: number };
   /** ranged: stop at stopX and shoot */
-  ranged?: { stopX: number; cd: number; projSpeed: number; projR: number; dmg: number; count: number; spreadDeg: number; color: string };
+  ranged?: { /** stops at this x when coming straight from the right; the stop distance from the ward is stopX - WARD_X */ stopX: number; cd: number; projSpeed: number; projR: number; dmg: number; count: number; spreadDeg: number; color: string };
   summon?: { every: number; count: number };
   /** Shield Bearer: a shield absorbs one whole hit */
   shield?: boolean;
@@ -81,6 +81,9 @@ export interface Enemy {
   trait?: EliteTraitId;
   /** visual timer: shield pop / pulse flash */
   shieldFlash: number;
+  /** knockback still to travel (Ward Pulse), eased out over a fraction of a second */
+  kbX: number;
+  kbY: number;
 }
 
 export interface PProj {
@@ -107,7 +110,7 @@ export interface Particle {
 
 export interface Ring { x: number; y: number; r: number; maxR: number; t: number; max: number; color: string }
 export interface Arc { pts: { x: number; y: number }[]; t: number; max: number; color: string }
-export interface FloatText { x: number; y: number; text: string; color: string; t: number; max: number; size: number; glow?: boolean }
+export interface FloatText { x: number; y: number; text: string; color: string; t: number; max: number; size: number; glow?: boolean; /** a damage number: scaled by the number-size setting */ num?: boolean }
 
 export interface World {
   time: number;
@@ -255,8 +258,8 @@ export function burst(w: World, x: number, y: number, color: string, n: number, 
   }
 }
 
-export function floatText(w: World, x: number, y: number, text: string, color: string, size = 14, max = 0.9, glow = false): void {
-  w.texts.push({ x: x + (Math.random() - 0.5) * 10, y, text, color, t: 0, max, size, glow });
+export function floatText(w: World, x: number, y: number, text: string, color: string, size = 14, max = 0.9, glow = false, num = false): void {
+  w.texts.push({ x: x + (Math.random() - 0.5) * 10, y, text, color, t: 0, max, size, glow, num });
 }
 
 export function updateFx(w: World, dt: number): void {

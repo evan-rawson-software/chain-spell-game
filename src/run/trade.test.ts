@@ -36,14 +36,14 @@ describe('stats, daily and save upgrade', () => {
     const old = { ...run } as Partial<typeof run>;
     delete old.daily;
     delete old.stats;
-    store.set('chain-spell-run-v2', JSON.stringify({ run: old, phase: 'map', visited: [], sold: [] }));
+    store.set('chain-spell-run-v3', JSON.stringify({ run: old, phase: 'map', visited: [], sold: [] }));
     const loaded = loadRun()!;
     expect(loaded.run.daily).toBeNull();
     expect(loaded.run.stats).toEqual(emptyStats());
     expect(loaded.ns).toEqual({});
-    saveRun(run, 'event', ['r1c0'], [], {});
+    saveRun(run, 'event', ['a1r1c0'], [], {});
     expect(loadRun()).toBeNull(); // a node phase needs run.at
-    saveRun({ ...run, at: 'r1c0' }, 'event', ['r1c0'], [], { outcome: ['x'], rerolled: true, ops: 2 });
+    saveRun({ ...run, at: 'a1r1c0' }, 'event', ['a1r1c0'], [], { outcome: ['x'], rerolled: true, ops: 2 });
     expect(loadRun()!.ns).toEqual({ outcome: ['x'], rerolled: true, ops: 2 });
   });
 
@@ -137,6 +137,6 @@ describe('selling, transmuting and events', () => {
 
   it('picks the same event for the same node', () => {
     expect(eventFor(1, 'r3c0')).toBe(eventFor(1, 'r3c0'));
-    expect(new Set(Array.from({ length: 100 }, (_, i) => eventFor(i, 'r3c0'))).size).toBe(6);
+    expect(new Set(Array.from({ length: 100 }, (_, i) => eventFor(i, 'r3c0'))).size).toBe(7);
   });
 });

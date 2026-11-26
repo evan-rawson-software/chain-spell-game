@@ -5,6 +5,7 @@ import { COLOR_HEX } from '../../types';
 import type { ReactionKind, RunState, RuneInstance, SpellGraph } from '../../types';
 import type { App } from '../app';
 import { MAP_ROWS } from '../map';
+import { reached, recordRunEnd } from '../history';
 import { clearRun } from '../state';
 import { boonChip, button, el } from '../ui';
 
@@ -93,10 +94,11 @@ function runeName(run: RunState, uid: string): string {
   return (m && CATALOG[m[1]]?.name) || uid;
 }
 
-export function endScreen(app: App, won: boolean): void {
+export function endScreen(app: App, won: boolean, record = true): void {
   const run = app.run;
-  // On defeat the floor is the row being fought, so rows cleared = floor - 1.
-  const cleared = won ? MAP_ROWS : Math.max(0, run.floor - 1);
+  // On defeat the floor is the row being fought.
+  const where = reached(run, won ? 'won' : 'lost');
+  if (record) recordRunEnd(run, won ? 'won' : 'lost');
   clearRun();
   sfx(won ? 'runVictory' : 'runDefeat');
   app.show((s) => {
@@ -110,7 +112,7 @@ export function endScreen(app: App, won: boolean): void {
     const stats = el('div', 'rn-stats wrap small', undefined, card);
     const st = run.stats;
     const totals: [string, string][] = [
-      ['Rows cleared', `${cleared}/${MAP_ROWS}`], ['Battles', String(st.battles)], ['Kills', String(st.kills)],
+      [won ? 'Cleared' : 'Reached', won ? 'All 3 acts' : `Act ${where.act}, row ${where.row}/${MAP_ROWS}`], ['Battles', String(st.battles)], ['Kills', String(st.kills)],
       ['Best hit', String(Math.round(st.bestHit))], ['Gold', String(run.gold)], ['Boons', String(run.boons.length)],
       ['Runes', String(run.owned.length)], ['Max mana', String(run.maxMana)],
     ];

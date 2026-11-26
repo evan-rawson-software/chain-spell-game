@@ -49,7 +49,7 @@ describe('floorDef', () => {
   it('lets the node decide the kind', () => {
     expect(floorDef(3, 'battle').kind).toBe('normal');
     expect(floorDef(3, 'elite').kind).toBe('elite');
-    expect(floorDef(10, 'boss').kind).toBe('boss');
+    expect(floorDef(6, 'boss').kind).toBe('boss');
   });
   it('adds an elite knight to the middle wave and +10% HP for elites', () => {
     const base = floorDef(6, 'battle');
@@ -62,9 +62,9 @@ describe('floorDef', () => {
 });
 
 describe('goldReward / rollBoons', () => {
-  it('scales gold by row and kind', () => {
-    expect(goldReward('battle', 2)).toBe(21);
-    expect(goldReward('elite', 5)).toBe(60);
+  it('scales gold by depth and kind', () => {
+    expect(goldReward('battle', 2)).toBe(19);
+    expect(goldReward('elite', 5)).toBe(55);
     expect(goldReward('shop', 5)).toBe(0);
   });
   it('rolls distinct unheld boons of a kind', () => {

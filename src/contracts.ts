@@ -15,12 +15,25 @@
  *   src/editor/index.ts  -> `export const mountEditor: MountEditor`
  *   src/battle/index.ts  -> `export const mountBattle: MountBattle`, `export const mountPractice: MountPractice`
  *   src/run/index.ts     -> run flow + screens; `export function startApp(root: HTMLElement): void`
- *   src/audio/index.ts   -> `sfx(name, opts?)`, `setMuted`, `isMuted` (any module may play sounds)
+ *   src/audio/index.ts   -> `sfx(name, opts?)`, `setMuted`, `isMuted`, `music(track | null)` (any module may play sounds)
+ *   src/settings.ts      -> `getSettings()`, `setSettings(patch)`, `onSettings(fn)` (any module may read settings)
+ *   src/data/fusions.ts  -> `export const FUSIONS: FusionRecipe[]`
  */
 import type {
-  BattleMods, BattleResult, CastPlan, Color, FloorDef, Modifier, OutputRef, RuneCatalog, RuneDef, RuneInstance,
+  AbilityId, BattleMods, BattleResult, CastPlan, Color, FloorDef, Modifier, OutputRef, RuneCatalog, RuneDef, RuneInstance,
   SpellGraph,
 } from './types';
+
+// ---------------------------------------------------------------- data/fusions.ts
+
+/** Owning runes `a` and `b` (any copies) lets the forge fuse them into `result` (a 'fused' rune). */
+export interface FusionRecipe {
+  a: string;
+  b: string;
+  result: string;
+}
+
+export type MusicTrack = 'title' | 'map' | 'battle' | 'boss';
 
 // ---------------------------------------------------------------- data/boons.ts
 
@@ -76,6 +89,12 @@ export interface SpellEngine {
   upgradeDef(def: RuneDef): RuneDef;
   /** The def an instance resolves to (upgraded when `inst.plus`). Undefined if unknown. */
   defOf(catalog: RuneCatalog, inst: RuneInstance): RuneDef | undefined;
+  /** True when the socket bonus of the placed rune `uid` is active in this graph. */
+  socketBonusActive(graph: SpellGraph, catalog: RuneCatalog, uid: string): boolean;
+  /** Share code for a spell (DESIGN.md, Share codes). Stable, URL-safe. */
+  encodeSpell(graph: SpellGraph): string;
+  /** Parse a share code; null if malformed or it names unknown runes. Uids are fresh ("s0", "s1"…, root = ROOT_UID). */
+  decodeSpell(code: string, catalog: RuneCatalog): SpellGraph | null;
 }
 
 // ---------------------------------------------------------------- editor/
@@ -90,6 +109,8 @@ export interface EditorOptions {
   maxMana: number;
   /** Blessing/curse spell mods, so the live stats match combat. */
   extraGlobals?: Modifier[];
+  /** The run's active ability, passed to the practice range. */
+  ability?: AbilityId;
   /** Called with the new graph after every edit. */
   onChange(graph: SpellGraph): void;
 }
@@ -112,6 +133,8 @@ export interface BattleOptions {
   wardMaxHp: number;
   /** Blessing/curse battle mods; defaults to neutral. */
   mods?: BattleMods;
+  /** The player's active ability (none if omitted). */
+  ability?: AbilityId;
   onEnd(result: BattleResult): void;
 }
 
@@ -128,6 +151,8 @@ export interface PracticeOptions {
   plan: CastPlan;
   graph: SpellGraph;
   catalog: RuneCatalog;
+  /** The run's active ability, usable in practice too. */
+  ability?: AbilityId;
 }
 
 export interface PracticeHandle {

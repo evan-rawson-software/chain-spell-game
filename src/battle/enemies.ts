@@ -12,31 +12,44 @@ import {
 } from './rules';
 import { sfx } from './sound';
 
+/** Where a group member enters: just past the right edge, or across the top / bottom edge at x 350..900. */
+export function spawnPoint(kind: EnemyKind, r: number, from: 'right' | 'top' | 'bottom'): { x: number; y: number } {
+  if (from === 'top') return { x: 350 + Math.random() * 550, y: -r - 10 };
+  if (from === 'bottom') return { x: 350 + Math.random() * 550, y: H + r + 10 };
+  return { x: W + r + 10, y: isBoss(kind) ? H / 2 : 60 + Math.random() * 480 };
+}
+
 export function spawnEnemy(
-  w: World, kind: EnemyKind, hpScale: number, at?: { x: number; y: number }, opts: { hp?: number } = {},
+  w: World, kind: EnemyKind, hpScale: number, at?: { x: number; y: number },
+  opts: { hp?: number; from?: 'right' | 'top' | 'bottom' } = {},
 ): Enemy {
   const cfg = ENEMY_CFG[kind];
+  const spawn = at ?? spawnPoint(kind, cfg.r, opts.from ?? 'right');
   const hp = opts.hp ?? Math.max(1, Math.round(cfg.hp * hpScale * w.mods.enemyHpMul));
   const e: Enemy = {
     id: w.nextId++, kind, cfg,
-    x: at ? at.x : W + cfg.r + 10,
-    y: at ? at.y : isBoss(kind) ? H / 2 : 60 + Math.random() * 480,
+    x: spawn.x, y: spawn.y,
     hp, maxHp: hp, r: cfg.r, st: newStatus(),
     cd: cfg.ranged ? 0.8 + Math.random() * cfg.ranged.cd * 0.5 : 0,
     summonCd: cfg.summon ? cfg.summon.every * 0.5 : 0,
     dead: false, flash: 0, attackAnim: 0, dotAcc: 0, dotTimer: 0, phase: Math.random() * 6, reactAt: {},
     hpScale, shield: !!cfg.shield, lastHit: -99, lastDamaged: w.time, shellBroken: 0,
     abilityCd: cfg.stomp ? cfg.stomp.every : cfg.pulse ? cfg.pulse.every * 0.6 : 0,
-    stage: 0, shieldFlash: 0,
+    stage: 0, shieldFlash: 0, kbX: 0, kbY: 0,
     trait: kind === 'elite_knight' ? w.eliteTrait : undefined,
   };
   w.enemies.push(e);
   return e;
 }
 
-/** Fog hides enemies beyond x = 650 unless hit recently; with no fog every enemy is visible. */
+/** Distance from the ward to an enemy (fog and ranged stop distances use it). */
+export function wardDist(e: { x: number; y: number }): number {
+  return Math.hypot(e.x - WARD_X, e.y - WARD_Y);
+}
+
+/** Fog hides enemies farther than FOG_DIST from the ward unless hit recently; with no fog every enemy is visible. */
 export function enemyVisible(w: World, e: Enemy): boolean {
-  return w.hazard !== 'fog' || fogVisible(e.x, w.time - e.lastHit);
+  return w.hazard !== 'fog' || fogVisible(wardDist(e), w.time - e.lastHit);
 }
 
 /**
@@ -73,7 +86,7 @@ export function damageEnemy(
     e.lastHit = w.time;
     if (dmg > w.bestHit) w.bestHit = dmg;
     const size = damageTextSize(dmg) * (opts.reaction ? 1.25 : 1);
-    floatText(w, e.x, e.y - e.r - 6, String(Math.max(1, Math.round(dmg))), ELEMENT_COLOR[element], size, opts.reaction ? 1.1 : 0.9, !!opts.reaction);
+    floatText(w, e.x, e.y - e.r - 6, String(Math.max(1, Math.round(dmg))), ELEMENT_COLOR[element], size, opts.reaction ? 1.1 : 0.9, !!opts.reaction, true);
     if (dmg >= 150) { onBigHit(w, dmg); sfx('bigHit'); }
     if (e.trait === 'reflective' && dmg > 0) damageWard(w, reflectDamage(dmg));
   }
@@ -218,7 +231,7 @@ export function updateEnemies(w: World, dt: number, hpScale: number): void {
     if (e.dotTimer <= 0) {
       e.dotTimer = 0.5;
       if (e.dotAcc >= 1) {
-        floatText(w, e.x, e.y - e.r - 6, String(Math.round(e.dotAcc)), e.st.poison.length && !e.st.burn ? '#7bd34a' : '#ff9a4a', 12, 0.7);
+        floatText(w, e.x, e.y - e.r - 6, String(Math.round(e.dotAcc)), e.st.poison.length && !e.st.burn ? '#7bd34a' : '#ff9a4a', 12, 0.7, false, true);
       }
       e.dotAcc = 0;
     }
@@ -236,6 +249,14 @@ export function updateEnemies(w: World, dt: number, hpScale: number): void {
       while (e.stage < stage) { e.stage++; spawnHydraHeads(w, e, e.stage); }
     }
 
+    if (e.kbX !== 0 || e.kbY !== 0) {
+      const k = 1 - Math.exp(-dt * 14);
+      const sx = e.kbX * k, sy = e.kbY * k;
+      e.x += sx; e.y += sy;
+      e.kbX -= sx; e.kbY -= sy;
+      if (Math.abs(e.kbX) < 0.5 && Math.abs(e.kbY) < 0.5) { e.x += e.kbX; e.y += e.kbY; e.kbX = 0; e.kbY = 0; }
+    }
+
     if (e.st.freeze > 0) continue; // frozen: no movement, no attacks, cooldowns hold
     const mul = moveMul(e.st) * w.mods.enemySpeedMul * traitSpeedMul(e.trait);
     const cfg = e.cfg;
@@ -251,8 +272,14 @@ export function updateEnemies(w: World, dt: number, hpScale: number): void {
     }
 
     if (cfg.ranged) {
-      if (e.x > cfg.ranged.stopX) {
-        e.x -= cfg.speed * mul * dt;
+      // stop at a distance from the ward, whichever edge the enemy came in from
+      const dx = WARD_X - e.x, dy = WARD_Y - e.y;
+      const dist = Math.hypot(dx, dy);
+      const stopDist = cfg.ranged.stopX - WARD_X;
+      if (dist > stopDist) {
+        const s = Math.min(cfg.speed * mul * dt, dist - stopDist + 0.01);
+        e.x += (dx / dist) * s;
+        e.y += (dy / dist) * s;
       } else if (e.cd <= 0) {
         fireEnemyShots(w, e);
         e.cd = cfg.ranged.cd;

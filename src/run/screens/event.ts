@@ -1,12 +1,15 @@
 import { sfx } from '../../audio';
 import type { App } from '../app';
 import {
-  DICE_COST, DICE_WIN, EVENT_INFO, FOUNTAIN_HP, canAltar, canDice, canFountainCurse, canMage, canTome, eventFor, eventRng,
+  DICE_COST, DICE_WIN, EVENT_INFO, FOUNTAIN_HP, canAltar, canDice, canFountainCurse, canMage, canMerchant, canTome, eventFor, eventRng,
   mageCost, resolveAltar, resolveDice, resolveFountain, resolveMage, resolveMerchant, resolveTome, type EventResult,
 } from '../events';
 import type { Rng } from '../rng';
+import { ALCHEMIST_COST } from '../fusion';
+import { logFusion } from '../telemetry';
 import { cutCount, runeLabel } from '../trade';
 import { button, el, rowLabel, runePicker } from '../ui';
+import { fusionPanel } from './fusionPanel';
 
 export function eventScreen(app: App): void {
   app.save('event');
@@ -17,7 +20,7 @@ export function eventScreen(app: App): void {
     const id = eventFor(app.run.seed, node.id);
     const info = EVENT_INFO[id];
     const box = el('div', 'rn-rewardbox rn-event', undefined, s);
-    el('h2', 'rn-h2', `${info.name} - ${rowLabel(node.row)}`, box);
+    el('h2', 'rn-h2', `${info.name} - ${rowLabel(node.row, app.run.act)}`, box);
     el('p', 'rn-event-text', info.text, box);
     const body = el('div', 'rn-choices', undefined, box);
     let picked: string | null = null;
@@ -80,10 +83,23 @@ export function eventScreen(app: App): void {
             'Needs a rune in your spell to forge and a curse you do not hold.', () => finish(resolveTome(app.run, rng())));
           break;
         case 'merchant':
-          runeChoice('Trade', () => true, '', (uid) => finish(resolveMerchant(app.run, uid, rng())));
+          runeChoice('Trade', (uid) => canMerchant(app.run, uid), 'Fused runes cannot be traded up.', (uid) => finish(resolveMerchant(app.run, uid, rng())));
           break;
         case 'dice':
           choice(`Stake ${DICE_COST} gold: 50% to win ${DICE_WIN}`, canDice(run), `Needs ${DICE_COST} gold.`, () => finish(resolveDice(app.run, rng())));
+          break;
+        case 'alchemist':
+          fusionPanel(app, body, {
+            cost: ALCHEMIST_COST,
+            onFused: (recipe, res) => {
+              logFusion(app.run, { row: node.row, a: recipe.a, b: recipe.b, result: recipe.result, gold: ALCHEMIST_COST });
+              finish({
+                run: app.run,
+                lines: [`You paid ${ALCHEMIST_COST} gold.`, `${runeLabel(res.used[0])} and ${runeLabel(res.used[1])} fused into ${res.result.name}.`,
+                  ...(res.cut.length ? [`${res.cut.length} rune${res.cut.length === 1 ? '' : 's'} left your spell.`] : [])],
+              });
+            },
+          });
           break;
         case 'fountain':
           choice(`Drink: +${FOUNTAIN_HP} max ward HP`, true, '', () => finish(resolveFountain(app.run, 'hp', rng())));

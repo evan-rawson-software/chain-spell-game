@@ -1,13 +1,15 @@
 import { BOONS } from '../data/boons';
 import { CATALOG, ROOT_UID, SOURCE_ID } from '../data/runes';
+import type { FusionRecipe } from '../contracts';
 import type { RunState } from '../types';
+import { ALCHEMIST_COST, craftableRecipes, fuse } from './fusion';
 import { nodeSeed, rollBoons } from './rewards';
 import { createRng, type Rng } from './rng';
 import { addBoon, applyReward, forgeRune, removeBoon } from './state';
-import { dropRune, instTier, rollHigher, runeLabel } from './trade';
+import { canTransmute, dropRune, instTier, rollHigher, runeLabel } from './trade';
 
-export type EventId = 'mage' | 'altar' | 'tome' | 'merchant' | 'dice' | 'fountain';
-export const EVENT_IDS: EventId[] = ['mage', 'altar', 'tome', 'merchant', 'dice', 'fountain'];
+export type EventId = 'mage' | 'altar' | 'tome' | 'merchant' | 'dice' | 'fountain' | 'alchemist';
+export const EVENT_IDS: EventId[] = ['mage', 'altar', 'tome', 'merchant', 'dice', 'fountain', 'alchemist'];
 
 export const DICE_COST = 25;
 export const DICE_WIN = 60;
@@ -22,6 +24,7 @@ export const EVENT_INFO: Record<EventId, { name: string; text: string }> = {
   merchant: { name: 'Wandering Merchant', text: 'A hooded trader will swap any rune of yours for a finer one.' },
   dice: { name: "Gambler's Dice", text: `Two bone dice. Stake ${DICE_COST} gold; call it right and win ${DICE_WIN}.` },
   fountain: { name: 'Fountain', text: 'Clear water wells up. It can fortify your ward or wash a curse away.' },
+  alchemist: { name: 'Alchemist', text: `A soot-stained alchemist will fuse two of your runes into something new, for ${ALCHEMIST_COST} gold.` },
 };
 
 /** The event of a node: seeded from the run seed and node id. */
@@ -51,6 +54,11 @@ export function canTome(run: RunState): boolean {
 export function canAltar(run: RunState, uid?: string): boolean { return unforged(run, uid).length > 0; }
 export function canDice(run: RunState): boolean { return run.gold >= DICE_COST; }
 export function canFountainCurse(run: RunState): boolean { return heldCurses(run).length > 0; }
+export function canMerchant(run: RunState, uid: string): boolean {
+  const inst = run.owned.find((o) => o.uid === uid);
+  return !!inst && canTransmute(inst);
+}
+export function canAlchemist(run: RunState): boolean { return run.gold >= ALCHEMIST_COST && craftableRecipes(run).length > 0; }
 
 /** Pay half your gold (min 10) for a random uncommon or rare rune. */
 export function resolveMage(run: RunState, rng: Rng): EventResult | null {
@@ -103,6 +111,17 @@ export function resolveMerchant(run: RunState, uid: string, rng: Rng): EventResu
   const dropped = dropRune(run, uid);
   const next = applyReward(dropped.run, { kind: 'rune', defId: def.id });
   return { run: next, lines: [`You traded ${runeLabel(inst)} for ${def.name} (${def.rarity}).`, ...cutNote(dropped.cut.length)] };
+}
+
+/** Pay 20 gold and fuse any recipe you can make. */
+export function resolveAlchemist(run: RunState, recipe: FusionRecipe): EventResult | null {
+  if (run.gold < ALCHEMIST_COST) return null;
+  const res = fuse({ ...run, gold: run.gold - ALCHEMIST_COST }, recipe);
+  if (!res) return null;
+  return {
+    run: res.run,
+    lines: [`You paid ${ALCHEMIST_COST} gold.`, `${runeLabel(res.used[0])} and ${runeLabel(res.used[1])} fused into ${res.result.name}.`, ...(res.cut.length ? [`${res.cut.length} rune${res.cut.length === 1 ? "" : "s"} left your spell.`] : [])],
+  };
 }
 
 /** Pay 25 gold; 50% to win 60. */

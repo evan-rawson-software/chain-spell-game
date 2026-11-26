@@ -1,10 +1,12 @@
 import './editor.css';
-import { COLOR_HEX } from '../types';
+import { COLOR_HEX, COLOR_SHAPE } from '../types';
 import type { Color, Element, KeystoneId, Modifier, OutputRef, RuneDef, RuneInstance, SpellGraph } from '../types';
 import type { EditorHandle, EditorOptions, MountEditor, Placement } from '../contracts';
 import {
-  compileSpell, defOf as resolveDef, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
+  compileSpell, decodeSpell, defOf as resolveDef, encodeSpell, findPlacements, openOutputs, placeRune, removeRune,
+  socketBonusActive, validateSpell,
 } from '../spell';
+import { getSettings, onSettings } from '../settings';
 import { runeTooltip } from '../data/runes';
 import { sfx } from '../audio';
 import { mountPractice } from '../battle';
@@ -14,12 +16,13 @@ const CARD_W = 190;
 const SOCK0 = 34;
 const ROW = 30;
 const BODY_H = 78;
+const BONUS_H = 18;
 const COL_GAP = 100;
 const ROW_GAP = 26;
 const PAD_X = 36;
 const PAD_Y = 44;
 const RARITY_COLOR: Record<string, string> = {
-  starter: '#8d86a6', common: '#b9c0cc', uncommon: '#46a758', rare: '#f5c518',
+  starter: '#8d86a6', common: '#b9c0cc', uncommon: '#46a758', rare: '#f5c518', fused: '#14b8a6',
 };
 const MAX_GHOSTS = 12;
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -32,6 +35,8 @@ const COLOR_NAME: Record<Color, string> = {
 };
 const isComplex = (c: Color): boolean => c === 'Y' || c === 'P' || c === 'T' || c === 'W';
 
+const touchOnly = (): boolean => typeof matchMedia === 'function' && matchMedia('(hover: none)').matches;
+
 function h<K extends keyof HTMLElementTagNameMap>(
   tag: K, cls?: string, text?: string,
 ): HTMLElementTagNameMap[K] {
@@ -42,14 +47,15 @@ function h<K extends keyof HTMLElementTagNameMap>(
 }
 
 function pip(c: Color): HTMLElement {
-  const p = h('span', 're-pip', c);
+  const cb = getSettings().colorblind;
+  const p = h('span', `re-pip${cb ? ' cb' : ''}`, cb ? COLOR_SHAPE[c] : c);
   p.style.setProperty('--pc', COLOR_HEX[c]);
   p.title = COLOR_NAME[c];
   return p;
 }
 
 function nodeHeight(def: RuneDef): number {
-  return Math.max(BODY_H, SOCK0 + Math.max(def.inputs.length, def.outputs.length, 1) * ROW + 6);
+  return Math.max(BODY_H + (def.socketBonus ? BONUS_H : 0), SOCK0 + Math.max(def.inputs.length, def.outputs.length, 1) * ROW + 6);
 }
 const sockY = (i: number): number => SOCK0 + i * ROW + ROW / 2;
 
@@ -119,7 +125,22 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   const controls = h('div', 're-ctl');
   const side = h('div', 're-side');
   main.appendChild(canvas);
-  root.append(main, side);
+  // narrow portrait layout: graph on top, a tab bar and a bottom sheet for Inventory / Stats
+  const tabBar = h('div', 're-tabs');
+  const TABS: [string, string][] = [['spell', 'Spell'], ['inv', 'Inventory'], ['stats', 'Stats']];
+  const tabBtns = TABS.map(([id, label]) => {
+    const b = h('button', 're-tab', label) as HTMLButtonElement;
+    b.type = 'button';
+    b.addEventListener('click', () => setTab(id));
+    tabBar.appendChild(b);
+    return b;
+  });
+  function setTab(id: string): void {
+    root.dataset.tab = id;
+    tabBtns.forEach((b, i) => b.classList.toggle('active', TABS[i][0] === id));
+  }
+  root.append(main, tabBar, side);
+  setTab('spell');
   container.appendChild(root);
 
   const tooltip = h('div', 're-tooltip');
@@ -143,6 +164,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       tooltip.style.top = `${Math.max(4, y)}px`;
     };
     el.addEventListener('mouseenter', (e) => {
+      if (touchOnly()) return; // emulated mouseenter after a tap would leave the tooltip stuck
       tooltip.textContent = runeTooltip(def);
       tooltip.style.display = 'block';
       move(e);
@@ -219,6 +241,11 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   let practiceDivider: HTMLElement | null = null;
   let practicePane: HTMLElement | null = null;
   let practiceMsg: HTMLElement | null = null;
+  /** An imported spell being previewed in the practice pane (the editor graph is untouched). */
+  let previewGraph: SpellGraph | null = null;
+  let previewBanner: HTMLElement | null = null;
+  let previewUse: HTMLButtonElement | null = null;
+  let previewNote: HTMLElement | null = null;
 
   function showPracticeError(text: string): void {
     if (!practiceMsg) return;
@@ -226,15 +253,172 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     practiceMsg.style.display = 'block';
   }
 
-  function syncPractice(): void {
+  function applyPracticeSpell(g: SpellGraph, maxMana: number): void {
     if (!practiceHandle || !practiceMsg || destroyed) return;
-    const v = validateSpell(graph, catalog, opts.maxMana);
+    const v = validateSpell(g, catalog, maxMana);
     if (v.errors.length > 0) { showPracticeError(v.errors[0]); return; }
     practiceMsg.style.display = 'none';
     try {
-      practiceHandle.setSpell(compileSpell(graph, catalog, opts.extraGlobals), graph);
+      practiceHandle.setSpell(compileSpell(g, catalog, opts.extraGlobals), g);
     } catch (err) {
       showPracticeError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  function syncPractice(): void {
+    if (previewGraph) return; // an imported spell is showing; Close returns to the current one
+    applyPracticeSpell(graph, opts.maxMana);
+  }
+
+  /** Map an imported spell onto distinct owned instances (forged nodes need forged copies). */
+  function mapOwned(imp: SpellGraph): { graph?: SpellGraph; error?: string } {
+    const placedUids = new Set(graph.nodes.map((n) => n.uid));
+    const pool = [...opts.owned].sort((a, b) => Number(placedUids.has(b.uid)) - Number(placedUids.has(a.uid)));
+    const used = new Set<string>();
+    const uidMap = new Map<string, string>();
+    const missing = new Map<string, number>();
+    const nodes: RuneInstance[] = [];
+    for (const n of imp.nodes) {
+      if (n.uid === imp.rootUid) {
+        const r = graph.nodes.find((x) => x.uid === graph.rootUid) ?? opts.root;
+        uidMap.set(n.uid, r.uid);
+        nodes.push(r);
+        continue;
+      }
+      const hit = pool.find((o) => !used.has(o.uid) && o.defId === n.defId && !!o.plus === !!n.plus);
+      if (!hit) {
+        const label = defOf(n)?.name ?? n.defId;
+        missing.set(label, (missing.get(label) ?? 0) + 1);
+        continue;
+      }
+      used.add(hit.uid);
+      uidMap.set(n.uid, hit.uid);
+      nodes.push(hit);
+    }
+    if (missing.size > 0) {
+      const list = [...missing].map(([name, c]) => (c > 1 ? `${name} \u00D7${c}` : name)).join(', ');
+      return { error: `Missing runes: ${list}` };
+    }
+    const m = (uid: string): string => uidMap.get(uid) ?? uid;
+    const ng: SpellGraph = {
+      rootUid: m(imp.rootUid),
+      nodes,
+      links: imp.links.map((l) => ({ ...l, from: { ...l.from, uid: m(l.from.uid) }, toUid: m(l.toUid) })),
+    };
+    const v = validateSpell(ng, catalog, opts.maxMana);
+    if (v.manaUsed > opts.maxMana) return { error: `Needs ${fmt(v.manaUsed)} mana (you have ${fmt(opts.maxMana)})` };
+    if (v.errors.length > 0) return { error: v.errors[0] };
+    return { graph: ng };
+  }
+
+  function refreshBanner(): void {
+    if (!previewBanner || !previewUse || !previewNote) return;
+    if (!previewGraph) { previewBanner.style.display = 'none'; practiceMsg?.classList.remove('with-banner'); return; }
+    previewBanner.style.display = 'flex';
+    practiceMsg?.classList.add('with-banner');
+    const m = mapOwned(previewGraph);
+    previewUse.disabled = !m.graph;
+    previewUse.title = m.graph ? 'Replace your spell with this one' : (m.error ?? '');
+    previewNote.textContent = m.error ?? '';
+  }
+
+  function stopPreview(): void {
+    previewGraph = null;
+    refreshBanner();
+    syncPractice();
+  }
+
+  function useImported(): void {
+    if (!previewGraph) return;
+    const m = mapOwned(previewGraph);
+    if (!m.graph) return;
+    applyGraph(m.graph);
+    stopPreview();
+    clearSelection();
+    sfx('runePlace');
+    toast('Imported spell applied');
+    render();
+  }
+
+  function startPreview(g: SpellGraph): void {
+    if (!practiceHandle) {
+      openPractice();
+      practiceBtn.classList.toggle('active', practiceHandle !== null);
+      requestAnimationFrame(() => { if (!destroyed) fitView(true); });
+    }
+    if (!practiceHandle) { notice = { text: 'Could not open the practice range.', kind: 'warn' }; render(); return; }
+    previewGraph = g;
+    applyPracticeSpell(g, Infinity);
+    refreshBanner();
+  }
+
+  // ---------------------------------------------------------- toast, share and import
+  let toastEl: HTMLElement | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  function toast(text: string): void {
+    toastEl?.remove();
+    if (toastTimer) clearTimeout(toastTimer);
+    toastEl = h('div', 're-toast', text);
+    container.appendChild(toastEl);
+    toastTimer = setTimeout(() => { toastEl?.remove(); toastEl = null; }, 1700);
+  }
+
+  const pop = h('div', 're-pop');
+  let popMode: 'share' | 'import' | null = null;
+  pop.addEventListener('click', (e) => e.stopPropagation());
+  pop.addEventListener('wheel', (e) => e.stopPropagation());
+  pop.addEventListener('pointerdown', (e) => e.stopPropagation());
+  function closePop(): void {
+    popMode = null;
+    pop.remove();
+  }
+  function openPop(mode: 'share' | 'import', code?: string): void {
+    popMode = mode;
+    pop.replaceChildren();
+    const input = h('input', 're-pop-input') as HTMLInputElement;
+    input.type = 'text';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    const err = h('div', 're-pop-err');
+    if (mode === 'share') {
+      pop.appendChild(h('div', 're-pop-title', 'Share code'));
+      pop.appendChild(h('div', 're-muted', 'Copy this code (Ctrl+C) and send it to a friend.'));
+      input.readOnly = true;
+      input.value = code ?? '';
+      pop.appendChild(input);
+    } else {
+      pop.appendChild(h('div', 're-pop-title', 'Import a spell'));
+      pop.appendChild(h('div', 're-muted', 'Paste a share code to preview it in the practice range.'));
+      input.placeholder = 'CS1.\u2026';
+      const tryImport = (): void => {
+        const text = input.value.trim();
+        err.textContent = '';
+        if (!text) return;
+        let g: SpellGraph | null = null;
+        try { g = decodeSpell(text, catalog); } catch { g = null; }
+        if (!g) { err.textContent = 'Not a valid spell code (or it uses runes this build does not know).'; return; }
+        closePop();
+        startPreview(g);
+      };
+      input.addEventListener('input', tryImport);
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') tryImport(); });
+      pop.appendChild(input);
+      pop.appendChild(err);
+    }
+    canvas.appendChild(pop);
+    input.focus();
+    if (mode === 'share') input.select();
+  }
+
+  async function doShare(): Promise<void> {
+    let code = '';
+    try { code = encodeSpell(graph); } catch { toast('Could not encode this spell'); return; }
+    try {
+      await navigator.clipboard.writeText(code);
+      closePop();
+      toast('Copied');
+    } catch {
+      openPop('share', code);
     }
   }
 
@@ -244,6 +428,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     practiceDivider?.remove();
     practicePane?.remove();
     practiceDivider = practicePane = practiceMsg = null;
+    previewGraph = null;
+    previewBanner = previewUse = previewNote = null;
   }
 
   function openPractice(): void {
@@ -255,9 +441,19 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const mount = h('div', 're-practice-mount');
     practiceMsg = h('div', 're-practice-msg');
     practiceMsg.style.display = 'none';
-    practicePane.append(mount, practiceMsg);
+    previewBanner = h('div', 're-preview');
+    previewBanner.style.display = 'none';
+    previewUse = h('button', 're-preview-btn use', 'Use') as HTMLButtonElement;
+    previewUse.type = 'button';
+    previewUse.addEventListener('click', useImported);
+    const closeBtn = h('button', 're-preview-btn', 'Close') as HTMLButtonElement;
+    closeBtn.type = 'button';
+    closeBtn.addEventListener('click', stopPreview);
+    previewNote = h('span', 're-preview-note');
+    previewBanner.append(h('b', undefined, 'Previewing imported spell'), previewUse, closeBtn, previewNote);
+    practicePane.append(mount, practiceMsg, previewBanner);
     main.append(practiceDivider, practicePane);
-    practiceHandle = mountPractice(mount, { plan, graph, catalog });
+    practiceHandle = mountPractice(mount, { plan, graph, catalog, ability: opts.ability });
     const v = validateSpell(graph, catalog, opts.maxMana);
     if (v.errors.length > 0) showPracticeError(v.errors[0]);
   }
@@ -292,8 +488,14 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   redoBtn = mkBtn('\u21B7', 'Redo (Ctrl+Shift+Z / Ctrl+Y)', redo);
   const practiceBtn = mkBtn('▶ Practice', 'Toggle the practice range (P)', () => setPractice(!practiceOn));
   practiceBtn.classList.add('re-ctl-practice');
+  const shareBtn = mkBtn('Share', 'Copy a share code for this spell', () => { void doShare(); });
+  const importBtn = mkBtn('Import', 'Paste a share code to preview a spell', () => {
+    if (popMode === 'import') closePop(); else openPop('import');
+  });
+  shareBtn.classList.add('re-ctl-text');
+  importBtn.classList.add('re-ctl-text');
   controls.append(
-    practiceBtn, h('span', 're-ctl-sep'),
+    practiceBtn, shareBtn, importBtn, h('span', 're-ctl-sep'),
     undoBtn, redoBtn, h('span', 're-ctl-sep'),
     mkBtn('−', 'Zoom out', () => zoomAtCenter(1 / 1.25)),
     zoomLabel,
@@ -307,6 +509,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     canvas.style.setProperty('--gx', `${view.x}px`);
     canvas.style.setProperty('--gy', `${view.y}px`);
     zoomLabel.textContent = `${Math.round(view.scale * 100)}%`;
+    // touch: keep the remove button a usable size when the graph is zoomed out
+    canvas.style.setProperty('--ixs', String(Math.max(1, Math.min(2.4, 0.95 / view.scale))));
   }
   function zoomAt(cx: number, cy: number, target: number): void {
     const s = Math.min(MAX_SCALE, Math.max(MIN_SCALE, target));
@@ -338,7 +542,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   let dragging = false;
   let pinch: { dist: number; scale: number } | null = null;
   const isBackground = (t: EventTarget | null): boolean =>
-    !(t instanceof Element) || !t.closest('.re-card, .re-ctl, .re-notice');
+    !(t instanceof Element) || !t.closest('.re-card, .re-ctl, .re-notice, .re-pop');
   const local = (e: PointerEvent | WheelEvent): { x: number; y: number } => {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -348,7 +552,14 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     return Math.hypot(a.x - b.x, a.y - b.y);
   };
 
+  let lastPointerType = 'mouse';
+  /** Touch pointer currently reordering a card (kept out of pan/pinch tracking). */
+  const canPan = (e: PointerEvent): boolean =>
+    e.pointerType === 'touch'
+      ? !(e.target instanceof Element && e.target.closest('.re-x, .re-ctl, .re-notice, .re-pop'))
+      : isBackground(e.target);
   canvas.addEventListener('pointerdown', (e) => {
+    lastPointerType = e.pointerType;
     if (e.target instanceof Element && e.target.closest('.re-ctl')) return;
     const middle = e.button === 1;
     if (e.button !== 0 && !middle) return;
@@ -370,7 +581,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       for (const id of pointers.keys()) { try { canvas.setPointerCapture(id); } catch { /* ignore */ } }
       return;
     }
-    if (pointers.size === 1 && (middle || isBackground(e.target))) {
+    if (pointers.size === 1 && (middle || canPan(e))) {
       panId = e.pointerId;
       const p = local(e);
       panStart = { x: p.x, y: p.y, vx: view.x, vy: view.y };
@@ -448,7 +659,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   }
 
   function makeSocket(cls: string, color: Color, x: number, y: number): HTMLElement {
-    const s = h('div', `re-sock ${cls}${isComplex(color) ? ' complex' : ''}`, color);
+    const cb = getSettings().colorblind;
+    const s = h('div', `re-sock ${cls}${isComplex(color) ? ' complex' : ''}${cb ? ' cb' : ''}`, cb ? COLOR_SHAPE[color] : color);
     s.style.setProperty('--sc', COLOR_HEX[color]);
     s.style.left = `${x}px`;
     s.style.top = `${y}px`;
@@ -462,8 +674,10 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     return 'var(--accent)';
   }
 
-  function buildCard(def: RuneDef, x: number, y: number, ghost: boolean, linkedIn?: Set<number>, openOut?: Set<number>): HTMLElement {
-    const card = h('div', `re-card ${ghost ? 're-ghost' : 're-node'}${isForged(def) ? ' forged' : ''}${def.keystone ? ' keystone' : ''}`);
+  function buildCard(
+    def: RuneDef, x: number, y: number, ghost: boolean, linkedIn?: Set<number>, openOut?: Set<number>, bonusOn?: boolean,
+  ): HTMLElement {
+    const card = h('div', `re-card ${ghost ? 're-ghost' : 're-node'}${isForged(def) ? ' forged' : ''}${def.keystone ? ' keystone' : ''}${def.rarity === 'fused' ? ' fused' : ''}`);
     card.style.left = `${x}px`;
     card.style.top = `${y}px`;
     card.style.width = `${CARD_W}px`;
@@ -479,7 +693,15 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const tc = h('span', 're-chip re-chip-time', `\u25F7 ${def.castTime > 0 ? '+' : ''}${fmt(def.castTime)}s`);
     tc.title = `${fmt(def.castTime)}s cast time`;
     meta.append(mc, tc);
+    if (def.rarity === 'fused') meta.appendChild(h('span', 're-chip re-chip-fused', 'Fused'));
     card.appendChild(meta);
+    if (def.socketBonus) {
+      const line = h('div', `re-bonus ${bonusOn ? 'on' : 'off'}`, `⚡ ${def.socketBonus.text}`);
+      const state = ghost ? (bonusOn ? 'Would be active if placed here.' : 'Would not be active here.') : (bonusOn ? 'Active.' : 'Inactive.');
+      line.title = `Socket bonus: ${def.socketBonus.text}
+${state}`;
+      card.appendChild(line);
+    }
     if (ghost) card.appendChild(h('div', 're-place', 'Click to place'));
     def.inputs.forEach((c, i) => {
       const filled = !ghost && linkedIn?.has(i);
@@ -521,6 +743,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const myH = nodeHeight(me.def);
     let start: { x: number; y: number; id: number } | null = null;
     let active = false;
+    let armed = false; // touch: reorder starts only after a short hold, so a swipe pans instead
+    let holdTimer = 0;
     let indicator: HTMLElement | null = null;
     const targetOf = (dy: number): number => {
       const c = me.y + dy / view.scale + myH / 2;
@@ -532,6 +756,9 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       return i;
     };
     const reset = (): void => {
+      clearTimeout(holdTimer);
+      armed = false;
+      card.classList.remove('re-armed');
       start = null;
       active = false;
       indicator?.remove();
@@ -542,10 +769,26 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     card.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || (e.target instanceof Element && e.target.closest('.re-x'))) return;
       start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+      if (e.pointerType === 'touch') {
+        const id = e.pointerId;
+        clearTimeout(holdTimer);
+        holdTimer = window.setTimeout(() => {
+          if (!start || start.id !== id || dragging || pointers.size !== 1) return;
+          armed = true;
+          pointers.delete(id); // reorder owns this finger: no pan / pinch
+          panId = null;
+          card.classList.add('re-armed');
+          try { navigator.vibrate?.(12); } catch { /* ignore */ }
+        }, 350);
+      }
     });
     card.addEventListener('pointermove', (e) => {
       if (!start || e.pointerId !== start.id) return;
       const dy = e.clientY - start.y;
+      if (e.pointerType === 'touch' && !armed) {
+        if (Math.hypot(e.clientX - start.x, dy) > 8) { clearTimeout(holdTimer); start = null; }
+        return;
+      }
       if (!active) {
         if (Math.hypot(e.clientX - start.x, dy) < 5) return;
         active = true;
@@ -570,6 +813,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     });
     card.addEventListener('pointerup', (e) => {
       if (!start || e.pointerId !== start.id) return;
+      if (e.pointerType === 'touch' && !armed) { reset(); return; }
       const was = active;
       const idx = was ? targetOf(e.clientY - start.y) : 0;
       reset();
@@ -733,7 +977,9 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     for (const n of graph.nodes) {
       const p = pos.get(n.uid);
       if (!p) continue;
-      const card = buildCard(p.def, p.x, p.y, false, linkedIn.get(n.uid), openKey.get(n.uid));
+      let bonusOn = false;
+      if (p.def.socketBonus) { try { bonusOn = socketBonusActive(graph, catalog, n.uid); } catch { bonusOn = false; } }
+      const card = buildCard(p.def, p.x, p.y, false, linkedIn.get(n.uid), openKey.get(n.uid), bonusOn);
       const isRoot = n.uid === graph.rootUid;
       if (isRoot) card.classList.add('root');
       if (selectedNode === n.uid) card.classList.add('selected');
@@ -758,7 +1004,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       card.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!isRoot) removeNode(n.uid);
+        if (!isRoot && lastPointerType !== 'touch') removeNode(n.uid);
       });
       world.appendChild(card);
     }
@@ -766,7 +1012,11 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     // ghost cards
     if (selDef && selInst) {
       ghostPos.forEach((g, gi) => {
-        const card = buildCard(selDef, g.x, g.y, true);
+        let wouldOn = false;
+        if (selDef.socketBonus) {
+          try { wouldOn = socketBonusActive(placeRune(graph, catalog, selInst, g.p), catalog, selInst.uid); } catch { wouldOn = false; }
+        }
+        const card = buildCard(selDef, g.x, g.y, true, undefined, undefined, wouldOn);
         attachTip(card, selDef);
         card.addEventListener('mouseenter', () => ghostLinks[gi].forEach((p) => p.classList.add('hl')));
         card.addEventListener('mouseleave', () => ghostLinks[gi].forEach((p) => p.classList.remove('hl')));
@@ -806,6 +1056,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       hint.appendChild(it);
     }
     canvas.appendChild(hint);
+    if (popMode) canvas.appendChild(pop);
 
     if (!fitted) fitView(false);
     renderSide();
@@ -831,11 +1082,13 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       } else {
         box.appendChild(h('div', 're-muted', 'The Source rune cannot be removed.'));
       }
+      box.dataset.sec = 'stats';
       side.appendChild(box);
     }
 
     // stats
     const stats = h('div');
+    stats.dataset.sec = 'stats';
     stats.appendChild(h('h3', undefined, 'Spell'));
     const sbox = h('div', 're-box');
     const v = validateSpell(graph, catalog, opts.maxMana);
@@ -916,6 +1169,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     const placed = new Set(graph.nodes.map((n) => n.uid));
     const inv = opts.owned.filter((o) => !placed.has(o.uid) && defOf(o));
     const invWrap = h('div');
+    invWrap.dataset.sec = 'inv';
     invWrap.appendChild(h('h3', undefined, `Inventory (${inv.length})`));
     if (inv.length === 0) {
       invWrap.appendChild(h('div', 're-muted', 'All owned runes are in the spell. Win floors to earn more.'));
@@ -936,10 +1190,15 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       const grid = h('div', 're-inv-grid');
       for (const o of list) {
         const d = defOf(o)!;
-        const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}${o.plus ? ' forged' : ''}${d.keystone ? ' keystone' : ''}`);
+        const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}${o.plus ? ' forged' : ''}${d.keystone ? ' keystone' : ''}${d.rarity === 'fused' ? ' fused' : ''}`);
         card.style.setProperty('--rar', RARITY_COLOR[d.rarity] ?? RARITY_COLOR.common);
         card.appendChild(h('div', 'n', d.keystone ? `◆ ${d.name}` : d.name));
         card.appendChild(h('div', 's', summarize(d)));
+        if (d.socketBonus) {
+          const sb = h('div', 're-bonus inv', `⚡ ${d.socketBonus.text}`);
+          sb.title = `Socket bonus: ${d.socketBonus.text}`;
+          card.appendChild(sb);
+        }
         const pips = h('div', 're-pips');
         pips.appendChild(h('span', 're-io', 'In'));
         d.inputs.forEach((c) => pips.appendChild(pip(c)));
@@ -949,7 +1208,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
         card.appendChild(pips);
         const foot = h('div', 'm');
         foot.appendChild(h('span', 're-chip re-chip-mana', `\u25C6 ${fmt(d.mana)}`));
-        foot.appendChild(h('span', 're-rar', d.rarity));
+        foot.appendChild(h('span', 're-rar', d.rarity === 'fused' ? 'Fused' : d.rarity));
         card.appendChild(foot);
         if (selectedInv === o.uid) card.appendChild(h('div', 're-sel-badge', 'Selected'));
         attachTip(card, d);
@@ -958,7 +1217,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
           selectedNode = null;
           notice = null;
           selectedInv = selectedInv === o.uid ? null : o.uid;
-          if (selectedInv) sfx('runePick');
+          if (selectedInv) { sfx('runePick'); setTab('spell'); } // portrait: back to the graph to place it
           render();
         });
         grid.appendChild(card);
@@ -993,12 +1252,14 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       setPractice(!practiceOn);
       return;
     }
+    if (e.key === 'Escape' && popMode) { closePop(); return; }
     if (e.key === 'Escape' && (selectedInv || selectedNode || notice)) {
       clearSelection();
       render();
     }
   };
   document.addEventListener('keydown', onKey);
+  const offSettings = onSettings(() => { if (!destroyed) render(); });
 
   syncHistoryButtons();
   render();
@@ -1009,6 +1270,9 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       destroyed = true;
       closePractice();
       document.removeEventListener('keydown', onKey);
+      offSettings();
+      if (toastTimer) clearTimeout(toastTimer);
+      toastEl?.remove();
       ro?.disconnect();
       root.remove();
       tooltip.remove();

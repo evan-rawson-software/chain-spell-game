@@ -1,5 +1,5 @@
 import type { BattleHandle, BoonTotals } from '../contracts';
-import type { BattleResult, BoonDef, MapNode, RunState } from '../types';
+import type { AbilityId, BattleResult, BoonDef, MapNode, RunState } from '../types';
 
 export type Cleanup = () => void;
 
@@ -15,6 +15,12 @@ export interface App {
   ns: import('./state').NodeState;
   /** Set by the title's Daily button: the next run started from the school screen is this daily date. */
   dailyPending: string | null;
+  /** School chosen on the school screen, waiting for the ability pick. */
+  schoolPending: string | null;
+  /** Where the settings screen returns to. */
+  settingsBack: (() => void) | null;
+  /** Open the settings screen; its Back button runs `back`. */
+  openSettings(back: () => void): void;
   lastResult: BattleResult | null;
   /** Live battle (set by the battle screen, null otherwise); used by the ?dev panel. */
   battle: BattleHandle | null;
@@ -36,21 +42,27 @@ export interface App {
   goto: {
     title(): void;
     school(): void;
+    ability(): void;
+    history(): void;
+    settings(): void;
+    /** The title card that opens an act (Continue goes to the map). */
+    act(): void;
     map(): void;
     prepare(): void;
     battle(): void;
     reward(): void;
     blessing(): void;
     shop(): void;
-    forge(): void;
+    forge(mode?: 'upgrade' | 'fuse'): void;
     shrine(): void;
     event(): void;
     treasure(): void;
     rest(): void;
     /** Resume a loaded save in its phase. */
     resume(phase: import('./state').Phase): void;
-    newRun(schoolId: string): void;
-    end(won: boolean): void;
+    newRun(schoolId: string, ability: AbilityId): void;
+    /** record = false skips the history/telemetry write (dev panel). */
+    end(won: boolean, record?: boolean): void;
     pickNode(node: MapNode): void;
   };
 }

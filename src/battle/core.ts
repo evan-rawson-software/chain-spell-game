@@ -29,6 +29,13 @@ export interface Caster {
   flashes: Map<string, number>;
   /** True when a cast started during the last update (the caller clears its manual-fire window). */
   readonly firedLastUpdate: boolean;
+  /** Multiplier on the next charge only (Overcast sets it to 2); back to 1 after the next natural cast. */
+  chargeMul: number;
+  /**
+   * Fire the whole spell now as an extra cast aimed at `target` (Overcast): the charge restarts and
+   * the next one takes `nextMul` times as long. Returns false when the spell has no shots.
+   */
+  castNow(w: World, target: Point, nextMul: number): boolean;
   /** Swap the spell: resets charge and any cast in flight. */
   setPlan(plan: CastPlan): void;
   /** Drop casts in flight (battle end). */
@@ -46,9 +53,27 @@ export function createCaster(initial: CastPlan): Caster {
   let casts: ActiveCast[] = [];
   let castCount = 0;
   let fired = false;
+  /** Queue one full cast (momentum and echo apply); resets the charge. */
+  function startCast(w: World, target: Point): void {
+    c.lastAim = target;
+    c.charge = 0;
+    fired = true;
+    c.lastCast = w.time;
+    const mul = w.ks.momentum ? momentumMul(w.momentum) : 1;
+    if (w.ks.momentum) w.momentum++;
+    casts.push({ i: 0, t: 0, mul, echo: false });
+    castCount++;
+    if (w.ks.echo && echoDue(castCount)) {
+      casts.push({ i: 0, t: ECHO_DELAY, mul, echo: true });
+      echoCue(w, false);
+    }
+    sfx('castFire');
+    if (c.largeCast) addTrauma(w, 0.2);
+  }
   const c: Caster = {
     get plan() { return plan; },
-    get castTime() { return Math.max(0.05, plan.castTime); },
+    get castTime() { return Math.max(0.05, plan.castTime) * c.chargeMul; },
+    chargeMul: 1,
     get hasShots() { return plan.shots.length > 0; },
     get largeCast() { return isLargeCast(plan.shots); },
     charge: 0,
@@ -62,6 +87,13 @@ export function createCaster(initial: CastPlan): Caster {
       casts = [];
       castCount = 0;
       c.charge = 0;
+      c.chargeMul = 1;
+    },
+    castNow(w, target, nextMul): boolean {
+      if (!c.hasShots) return false;
+      startCast(w, target);
+      c.chargeMul = nextMul;
+      return true;
     },
     clearCasts(): void { casts = []; },
     update(w, dt, aim, forced): void {
@@ -70,22 +102,7 @@ export function createCaster(initial: CastPlan): Caster {
       c.charge = Math.min(c.castTime, c.charge + dt);
       if (c.hasShots && c.charge >= c.castTime) {
         const target = forced ?? aim();
-        if (target) {
-          c.lastAim = target;
-          c.charge = 0;
-          fired = true;
-          c.lastCast = w.time;
-          const mul = w.ks.momentum ? momentumMul(w.momentum) : 1;
-          if (w.ks.momentum) w.momentum++;
-          casts.push({ i: 0, t: 0, mul, echo: false });
-          castCount++;
-          if (w.ks.echo && echoDue(castCount)) {
-            casts.push({ i: 0, t: ECHO_DELAY, mul, echo: true });
-            echoCue(w, false);
-          }
-          sfx('castFire');
-          if (c.largeCast) addTrauma(w, 0.2);
-        }
+        if (target) { startCast(w, target); c.chargeMul = 1; }
       }
       for (const k of casts) {
         k.t -= dt;

@@ -1,8 +1,9 @@
 import type { FloorDef } from '../types';
 import { H, W, WARD_X, WARD_Y } from './model';
+import { boltPoints, stormStrike } from './storm';
 
 /**
- * Combat background: a dark flagstone arena. Static layers (stone, cracks, stains,
+ * Combat background (per act: I crypt, II frozen marsh, III storm spire): a dark flagstone arena. Static layers (stone, cracks, stains,
  * rune ring, vignette) are prerendered once per (floor kind, resolution); only drifting
  * fog and embers are drawn per frame. Everything is seeded so nothing flickers.
  */
@@ -24,6 +25,22 @@ const THEMES: Record<Kind, Theme> = {
   boss: { stone: [52, 28, 38], accent: '#d8405a', ember: '#ff8a5a', fog: '230,80,90' },
 };
 
+/** Act looks (DESIGN.md, Acts and map). Act 1 keeps the kind themes above untouched. */
+const ACT_THEMES: Record<2 | 3, { stone: [number, number, number]; accent: string; ember: string; fog: string }> = {
+  2: { stone: [26, 46, 52], accent: '#3fc8b4', ember: '#a8f0e4', fog: '130,210,200' },
+  3: { stone: [42, 30, 66], accent: '#a070ff', ember: '#d4b8ff', fog: '170,130,240' },
+};
+
+function themeFor(kind: Kind, act: number): Theme {
+  const base = THEMES[kind];
+  if (act !== 2 && act !== 3) return base;
+  const a = ACT_THEMES[act];
+  // elites and bosses keep a hint of their own colour
+  const k = kind === 'normal' ? 0 : 0.3;
+  const stone = a.stone.map((v, i) => Math.round(v * (1 - k) + base.stone[i] * k)) as [number, number, number];
+  return { stone, accent: kind === 'normal' ? a.accent : base.accent, ember: a.ember, fog: a.fog };
+}
+
 function rng(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -42,12 +59,12 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
   return c;
 }
 
-function renderStatic(kind: Kind, res: number): HTMLCanvasElement {
-  const th = THEMES[kind];
+function renderStatic(kind: Kind, act: number, res: number): HTMLCanvasElement {
+  const th = themeFor(kind, act);
   const cv = makeCanvas(W * res, H * res);
   const g = cv.getContext('2d')!;
   g.scale(res, res);
-  const rand = rng(kind === 'boss' ? 913 : kind === 'elite' ? 517 : 101);
+  const rand = rng((kind === 'boss' ? 913 : kind === 'elite' ? 517 : 101) + (act === 2 ? 5000 : act === 3 ? 9000 : 0));
   const [sr, sg, sb] = th.stone;
   const rgb = (m: number, a = 1): string =>
     `rgba(${Math.min(255, Math.round(sr * m))},${Math.min(255, Math.round(sg * m))},${Math.min(255, Math.round(sb * m))},${a})`;
@@ -113,6 +130,58 @@ function renderStatic(kind: Kind, res: number): HTMLCanvasElement {
     g.stroke();
   }
 
+  if (act === 2) {
+    // frozen marsh: icy sheen patches and pale cracks
+    for (let i = 0; i < 14; i++) {
+      const x = rand() * W, y = rand() * H, r = 50 + rand() * 90;
+      const gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(170,235,240,0.11)');
+      gr.addColorStop(1, 'rgba(170,235,240,0)');
+      g.fillStyle = gr;
+      g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (let i = 0; i < 16; i++) {
+      let x = rand() * W, y = rand() * H;
+      let a = rand() * Math.PI * 2;
+      const pts: number[] = [x, y];
+      const segs = 4 + Math.floor(rand() * 5);
+      for (let k = 0; k < segs; k++) {
+        a += (rand() - 0.5) * 1.5;
+        const l = 10 + rand() * 22;
+        x += Math.cos(a) * l; y += Math.sin(a) * l;
+        pts.push(x, y);
+      }
+      for (const [col, lw] of [['rgba(120,220,235,0.16)', 3.2], ['rgba(225,250,255,0.5)', 1]] as const) {
+        g.strokeStyle = col; g.lineWidth = lw;
+        g.beginPath(); g.moveTo(pts[0], pts[1]);
+        for (let k = 2; k < pts.length; k += 2) g.lineTo(pts[k], pts[k + 1]);
+        g.stroke();
+      }
+    }
+  } else if (act === 3) {
+    // storm spire: glowing violet fissures in the stone
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (let i = 0; i < 12; i++) {
+      let x = rand() * W, y = rand() * H;
+      let a = rand() * Math.PI * 2;
+      const pts: number[] = [x, y];
+      const segs = 3 + Math.floor(rand() * 5);
+      for (let k = 0; k < segs; k++) {
+        a += (rand() - 0.5) * 1.3;
+        const l = 10 + rand() * 20;
+        x += Math.cos(a) * l; y += Math.sin(a) * l;
+        pts.push(x, y);
+      }
+      for (const [col, lw] of [['rgba(150,100,255,0.14)', 3.5], ['rgba(200,170,255,0.4)', 0.9]] as const) {
+        g.strokeStyle = col; g.lineWidth = lw;
+        g.beginPath(); g.moveTo(pts[0], pts[1]);
+        for (let k = 2; k < pts.length; k += 2) g.lineTo(pts[k], pts[k + 1]);
+        g.stroke();
+      }
+    }
+  }
+
   // faint arena rune rings centred on the player's circle
   g.save();
   g.translate(WARD_X, WARD_Y);
@@ -166,6 +235,7 @@ const FOGS = 5;
 
 interface Cache {
   kind: Kind;
+  act: number;
   res: number;
   stat: HTMLCanvasElement;
   fog: HTMLCanvasElement;
@@ -188,22 +258,30 @@ export function drawArena(
   ctx: CanvasRenderingContext2D, floor: FloorDef, t: number, res: number, offX: number, viewW: number,
 ): void {
   const q = Math.min(2, Math.max(0.5, Math.ceil(res * 2) / 2));
-  if (!cache || cache.kind !== floor.kind || cache.res !== q) {
-    cache = { kind: floor.kind, res: q, stat: renderStatic(floor.kind, q), fog: renderFogSprite(THEMES[floor.kind].fog) };
+  const act = floor.act === 2 || floor.act === 3 ? floor.act : 1;
+  if (!cache || cache.kind !== floor.kind || cache.act !== act || cache.res !== q) {
+    cache = { kind: floor.kind, act, res: q, stat: renderStatic(floor.kind, act, q), fog: renderFogSprite(themeFor(floor.kind, act).fog) };
   }
-  const th = THEMES[floor.kind];
+  const th = themeFor(floor.kind, act);
   // letterbox sides: plain dark stone so entering enemies read against it
   const [sr, sg, sb] = th.stone;
   ctx.fillStyle = `rgb(${Math.round(sr * 0.25)},${Math.round(sg * 0.25)},${Math.round(sb * 0.25)})`;
   ctx.fillRect(offX, 0, viewW, H);
   ctx.drawImage(cache.stat, 0, 0, W, H);
 
-  // drifting fog
+  // drifting fog (the marsh is thick with mist: bigger, denser, in two layers)
+  const mist = act === 2;
   for (const f of fogP) {
-    const x = ((f.x + t * f.sp) % (W + 2 * f.r)) - f.r;
+    const k = mist ? 1.5 : 1;
+    const x = ((f.x + t * f.sp * (mist ? 1.4 : 1)) % (W + 2 * f.r * k)) - f.r * k;
     const y = f.y + Math.sin(t * 0.2 + f.ph) * 20;
-    ctx.globalAlpha = 0.05 + 0.025 * Math.sin(t * 0.3 + f.ph);
-    ctx.drawImage(cache.fog, x - f.r, y - f.r, f.r * 2, f.r * 2);
+    ctx.globalAlpha = (mist ? 0.13 : 0.05) + (mist ? 0.04 : 0.025) * Math.sin(t * 0.3 + f.ph);
+    ctx.drawImage(cache.fog, x - f.r * k, y - f.r * k, f.r * 2 * k, f.r * 2 * k);
+    if (mist) {
+      const x2 = W - (((f.x + t * f.sp * 0.7) % (W + 2 * f.r)) - f.r);
+      ctx.globalAlpha = 0.08 + 0.03 * Math.sin(t * 0.4 + f.ph * 2);
+      ctx.drawImage(cache.fog, x2 - f.r, H - y - f.r, f.r * 2, f.r * 2);
+    }
   }
 
   // embers
@@ -217,4 +295,28 @@ export function drawArena(
   }
   ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
+
+  // storm spire: occasional soft lightning in the background (none under reduced motion)
+  if (act === 3 && !reducedMotion()) {
+    const s = stormStrike(t);
+    if (s) {
+      ctx.fillStyle = `rgba(185,150,255,${s.level * 0.28})`;
+      ctx.fillRect(offX, 0, viewW, H);
+      const pts = boltPoints(s.epoch, W);
+      ctx.save();
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      ctx.globalAlpha = Math.min(1, s.level * 1.4);
+      ctx.strokeStyle = 'rgba(170,130,255,0.5)'; ctx.lineWidth = 6;
+      ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke();
+      ctx.strokeStyle = 'rgba(240,230,255,0.9)'; ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+let reduced: boolean | null = null;
+function reducedMotion(): boolean {
+  if (reduced === null) reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return reduced;
 }

@@ -102,7 +102,8 @@ export const HAZARD_INFO: Record<HazardId, { name: string; desc: string }> = {
 export const HEAT_PERIOD = 5;
 export const HEAT_BURN = { dps: 3, t: 3 };
 export const RAIN_WET = 0.5;
-export const FOG_X = 650;
+/** Fog hides enemies farther than this from the ward (about x = 650 on the ward line). */
+export const FOG_DIST = 570;
 export const FOG_REVEAL = 0.6;
 
 /** Damage multiplier for an element from the hazard and an elite trait. */
@@ -120,13 +121,13 @@ export function hazardSlowMul(hazard: HazardId | undefined): number {
   return hazard === 'heatwave' ? 0.5 : 1;
 }
 
-/** Fog opacity of an enemy at world x that was last hit `sinceHit` seconds ago (1 = fully drawn). */
-export function fogAlpha(x: number, sinceHit: number): number {
-  if (x <= FOG_X) return 1;
+/** Fog opacity of an enemy `dist` from the ward that was last hit `sinceHit` seconds ago (1 = fully drawn). */
+export function fogAlpha(dist: number, sinceHit: number): number {
+  if (dist <= FOG_DIST) return 1;
   if (sinceHit >= FOG_REVEAL) return 0;
   return Math.min(1, (FOG_REVEAL - sinceHit) / 0.25);
 }
 
-export function fogVisible(x: number, sinceHit: number): boolean {
-  return fogAlpha(x, sinceHit) > 0;
+export function fogVisible(dist: number, sinceHit: number): boolean {
+  return fogAlpha(dist, sinceHit) > 0;
 }

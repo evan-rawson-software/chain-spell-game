@@ -1,16 +1,21 @@
 import { BOONS } from '../data/boons';
-import { CATALOG, ROOT_UID, starterGraph } from '../data/runes';
+import { CATALOG, ROOT_UID, SOURCE_ID, starterGraph } from '../data/runes';
 import { DEFAULT_SCHOOL, SCHOOLS } from '../data/schools';
+import { removeRune } from '../spell';
 import type { BoonTotals } from '../contracts';
-import type { BattleResult, MapNodeKind, ReactionKind, Reward, RunState, RunStats, RuneInstance } from '../types';
-import { findNode, generateMap, isValidMap } from './map';
+import type { AbilityId, BattleResult, MapNodeKind, ReactionKind, Reward, RunState, RunStats, RuneInstance, SpellGraph } from '../types';
+import { ABILITY_IDS, DEFAULT_ABILITY } from './abilities';
+import { ACTS, findNode, generateMap, isValidMap } from './map';
 
 export const MAX_MANA_START = 8;
 export const WARD_HP = 100;
 export const START_GOLD = 20;
-const KEY = 'chain-spell-run-v2';
-const OLD_KEYS = ['chain-spell-run-v1'];
+const KEY = 'chain-spell-run-v3';
+/** Saves from before acts (10-row maps). They are discarded, not migrated: see `takeDiscardNotice`. */
+const OLD_KEYS = ['chain-spell-run-v1', 'chain-spell-run-v2'];
+export const LOADOUT_SLOTS = 3;
 
+/** Saved format v3 (acts, ability, loadouts). See SavedRun. */
 export type Phase = 'map' | 'prepare' | 'reward' | 'shop' | 'forge' | 'shrine' | 'blessing' | 'event' | 'treasure' | 'rest';
 const PHASES: Phase[] = ['map', 'prepare', 'reward', 'shop', 'forge', 'shrine', 'blessing', 'event', 'treasure', 'rest'];
 
@@ -25,9 +30,10 @@ export interface NodeState {
 }
 
 /**
- * Saved format (localStorage `chain-spell-run-v2`):
+ * Saved format (localStorage `chain-spell-run-v3`; v1/v2 saves have 10-row maps and are discarded on load):
  *   { run: RunState, phase: Phase, visited: string[], sold: number[], ns: NodeState }
- * `run.daily` ('YYYY-MM-DD' or null) and `run.stats` were added later; loadRun fills them in for older v2 saves.
+ * `run.act` (1..3), `run.ability`, `run.loadouts` (3 slots, `run.loadout` active, that slot mirrors `run.graph`) are filled in
+ * with defaults when missing.
  * `run.at` is the node being played (phase != 'map') or the last cleared node (phase 'map').
  * `visited` is the path of node ids, `sold` the shop stock indexes bought at the current shop.
  * Shop stock, rewards and shrine offers are re-derived from run.seed + node id, so they survive reloads.
@@ -69,24 +75,78 @@ export function newRun(
   seed: number = (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) >>> 0,
   schoolId: string = DEFAULT_SCHOOL,
   daily: string | null = null,
+  ability: AbilityId = DEFAULT_ABILITY,
 ): RunState {
   const school = SCHOOLS.find((s) => s.id === schoolId) ?? SCHOOLS.find((s) => s.id === DEFAULT_SCHOOL) ?? SCHOOLS[0];
   const owned: RuneInstance[] = school.kit.map((defId, i) => ({ uid: `${defId}-${i}`, defId }));
+  const graph = starterGraph(owned, school.id);
   return {
     floor: 1,
     owned,
-    graph: starterGraph(owned, school.id),
+    graph,
     maxMana: MAX_MANA_START,
     wardMaxHp: WARD_HP,
     seed,
     school: school.id,
-    map: generateMap(seed),
+    ability,
+    act: 1,
+    map: generateMap(seed, 1),
     at: null,
     gold: START_GOLD,
     boons: school.boon ? [school.boon] : [],
     daily,
     stats: emptyStats(),
+    loadouts: [graph, null, null],
+    loadout: 0,
   };
+}
+
+/** A spell with only the Source (an empty loadout slot). */
+export function emptyGraph(): SpellGraph {
+  return { rootUid: ROOT_UID, nodes: [{ uid: ROOT_UID, defId: SOURCE_ID }], links: [] };
+}
+
+/** Start the next act: its seeded map, back to row 1. Max mana and everything owned carry over. */
+export function advanceAct(run: RunState): RunState {
+  const act = Math.min(ACTS, run.act + 1);
+  return { ...run, act, map: generateMap(run.seed, act), at: null, floor: 1 };
+}
+
+/** Make slot `slot` the active spell: the current graph is stored in its own slot first. An empty slot is the Source alone. */
+export function switchLoadout(run: RunState, slot: number): RunState {
+  if (slot < 0 || slot >= LOADOUT_SLOTS || slot === run.loadout) return run;
+  const loadouts = padLoadouts(run.loadouts);
+  loadouts[run.loadout] = run.graph;
+  const graph = loadouts[slot] ?? emptyGraph();
+  loadouts[slot] = graph;
+  return { ...run, loadouts, loadout: slot, graph };
+}
+
+function padLoadouts(l: (SpellGraph | null)[] | undefined): (SpellGraph | null)[] {
+  return Array.from({ length: LOADOUT_SLOTS }, (_, i) => l?.[i] ?? null);
+}
+
+/** Every loadout graph with the active slot synced to `run.graph`. */
+export function allLoadouts(run: RunState): (SpellGraph | null)[] {
+  const l = padLoadouts(run.loadouts);
+  l[run.loadout] = run.graph;
+  return l;
+}
+
+/** True when the loadout slot holds a spell with at least one rune besides the Source. */
+export function loadoutUsed(run: RunState, slot: number): boolean {
+  return (allLoadouts(run)[slot]?.nodes.length ?? 0) > 1;
+}
+
+/** Applies `fn` to the active graph and to every stored loadout graph (used for removing and forging runes). */
+export function mapGraphs(run: RunState, fn: (g: SpellGraph) => SpellGraph): RunState {
+  const loadouts = allLoadouts(run).map((g) => (g ? fn(g) : g));
+  return { ...run, graph: loadouts[run.loadout] as SpellGraph, loadouts };
+}
+
+/** Remove `uid` (and runes that depend on it) from the active spell and every loadout. */
+export function removeFromLoadouts(run: RunState, uid: string): RunState {
+  return mapGraphs(run, (g) => (g.nodes.some((n) => n.uid === uid) ? removeRune(g, uid) : g));
 }
 
 /** Max mana gained automatically when leaving a node of this kind. */
@@ -129,7 +189,8 @@ export function spendGold(run: RunState, cost: number): RunState {
 /** Forge an owned rune: flags the owned entry and the placed copy (same uid). */
 export function forgeRune(run: RunState, uid: string): RunState {
   const mark = (r: RuneInstance): RuneInstance => (r.uid === uid ? { ...r, plus: true } : r);
-  return { ...run, owned: run.owned.map(mark), graph: { ...run.graph, nodes: run.graph.nodes.map(mark) } };
+  const next = mapGraphs(run, (g) => ({ ...g, nodes: g.nodes.map(mark) }));
+  return { ...next, owned: run.owned.map(mark) };
 }
 
 export function saveRun(run: RunState, phase: Phase, visited: string[] = [], sold: number[] = [], ns: NodeState = {}): void {
@@ -171,9 +232,29 @@ function sanitizeNodeState(x: unknown): NodeState {
   return ns;
 }
 
+let discarded = false;
+/** True once after loadRun threw away an old-format save (so the title screen can say so). */
+export function takeDiscardNotice(): boolean {
+  const d = discarded;
+  discarded = false;
+  return d;
+}
+
+function sanitizeGraph(g: unknown, uids: Set<string>): SpellGraph | null {
+  const r = g as SpellGraph | null | undefined;
+  if (!r || r.rootUid !== ROOT_UID || !Array.isArray(r.nodes) || !Array.isArray(r.links)) return null;
+  if (!r.nodes.every((n) => !!n && typeof n.uid === 'string' && uids.has(n.uid) && (n.uid === ROOT_UID || (typeof n.defId === 'string' && !!CATALOG[n.defId])))) return null;
+  if (!r.nodes.some((n) => n.uid === ROOT_UID)) return null;
+  const placed = new Set(r.nodes.map((n) => n.uid));
+  if (!r.links.every((l) => !!l && !!l.from && placed.has(l.from.uid) && placed.has(l.toUid))) return null;
+  return r;
+}
+
 export function loadRun(): SavedRun | null {
   try {
-    for (const k of OLD_KEYS) localStorage.removeItem(k); // old saves are discarded
+    for (const k of OLD_KEYS) {
+      if (localStorage.getItem(k) !== null) { discarded = true; localStorage.removeItem(k); }
+    }
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as Partial<SavedRun> | null;
@@ -188,9 +269,15 @@ export function loadRun(): SavedRun | null {
     if (typeof r.school !== 'string' || !isValidMap(r.map)) return null;
     if (r.at !== null && !findNode(r.map, r.at)) return null;
     if (!Array.isArray(r.boons)) return null;
-    // Saves from before daily runs / run stats lack these fields: upgrade instead of discarding.
     const daily = typeof r.daily === 'string' ? r.daily : null;
-    const run: RunState = { ...r, boons: r.boons.filter((b) => typeof b === 'string' && !!BOONS[b]), daily, stats: sanitizeStats(r.stats) };
+    const act = isNum(r.act) ? Math.max(1, Math.min(ACTS, Math.round(r.act))) : 1;
+    const ability = ABILITY_IDS.includes(r.ability as AbilityId) ? (r.ability as AbilityId) : DEFAULT_ABILITY;
+    const loadout = isNum(r.loadout) && r.loadout >= 0 && r.loadout < LOADOUT_SLOTS ? Math.round(r.loadout) : 0;
+    const loadouts = padLoadouts(Array.isArray(r.loadouts) ? r.loadouts.map((g) => sanitizeGraph(g, uids)) : undefined);
+    loadouts[loadout] = r.graph;
+    const run: RunState = {
+      ...r, act, ability, loadout, loadouts, boons: r.boons.filter((b) => typeof b === 'string' && !!BOONS[b]), daily, stats: sanitizeStats(r.stats),
+    };
     if (s.phase !== 'map' && !run.at) return null;
     const visited = Array.isArray(s.visited) ? s.visited.filter((v): v is string => typeof v === 'string') : [];
     const sold = Array.isArray(s.sold) ? s.sold.filter(isNum) : [];

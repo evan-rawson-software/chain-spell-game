@@ -1,11 +1,12 @@
 import type { FloorDef, StatusKind } from '../types';
 import { drawArena } from './arena';
 import { drawMagicCircle } from './circle';
+import { getSettings } from '../settings';
 import {
-  FOG_X, HAZARD_INFO, SHELL_BREAK_TIME, SHIELD_REGROW, STOMP_RANGE, TRAIT_INFO, defenseUp, fogAlpha, isBoss,
+  FOG_DIST, HAZARD_INFO, SHELL_BREAK_TIME, SHIELD_REGROW, STOMP_RANGE, TRAIT_INFO, defenseUp, fogAlpha, isBoss,
 } from './rules';
 import {
-  ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, STATUS_COLOR, W,
+  ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, STATUS_COLOR, W, WARD_X, WARD_Y,
   type Enemy, type World,
 } from './model';
 
@@ -55,7 +56,7 @@ export function render(ctx: CanvasRenderingContext2D, w: World, h: HudState): vo
     sinceCast: h.sinceCast, color: h.orbColor, aimX: h.aimX, aimY: h.aimY, big: h.bigCast,
   });
   for (const e of w.enemies) {
-    const a = w.hazard === 'fog' ? fogAlpha(e.x, w.time - e.lastHit) : 1;
+    const a = w.hazard === 'fog' ? fogAlpha(Math.hypot(e.x - WARD_X, e.y - WARD_Y), w.time - e.lastHit) : 1;
     if (a <= 0) continue;
     ctx.globalAlpha = a;
     drawEnemy(ctx, e, h.time);
@@ -503,10 +504,11 @@ function drawEffects(ctx: CanvasRenderingContext2D, w: World): void {
   }
   ctx.restore();
   ctx.textAlign = 'center';
+  const numScale = getSettings().numberSize;
   for (const t of w.texts) {
     const k = t.t / t.max;
     ctx.globalAlpha = k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4;
-    ctx.font = `bold ${t.size}px sans-serif`;
+    ctx.font = `bold ${t.num ? t.size * numScale : t.size}px sans-serif`;
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
     ctx.strokeText(t.text, t.x, t.y);
     if (t.glow) { ctx.save(); ctx.shadowColor = t.color; ctx.shadowBlur = 12; }
@@ -605,16 +607,24 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
     ctx.restore();
   }
 
-  // off-screen enemy markers on the right edge
+  // off-screen enemy markers on the right, top and bottom edges
   ctx.fillStyle = 'rgba(255,90,90,0.85)';
   for (const e of w.enemies) {
-    if (e.dead || e.x - e.r < W) continue;
-    const y = Math.max(20, Math.min(H - 20, e.y));
-    ctx.beginPath(); ctx.moveTo(W - 4, y); ctx.lineTo(W - 16, y - 8); ctx.lineTo(W - 16, y + 8); ctx.closePath(); ctx.fill();
+    if (e.dead) continue;
+    if (e.y + e.r <= 0) {
+      const x = Math.max(20, Math.min(W - 20, e.x));
+      ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x - 8, 16); ctx.lineTo(x + 8, 16); ctx.closePath(); ctx.fill();
+    } else if (e.y - e.r >= H) {
+      const x = Math.max(20, Math.min(W - 20, e.x));
+      ctx.beginPath(); ctx.moveTo(x, H - 4); ctx.lineTo(x - 8, H - 16); ctx.lineTo(x + 8, H - 16); ctx.closePath(); ctx.fill();
+    } else if (e.x - e.r >= W) {
+      const y = Math.max(20, Math.min(H - 20, e.y));
+      ctx.beginPath(); ctx.moveTo(W - 4, y); ctx.lineTo(W - 16, y - 8); ctx.lineTo(W - 16, y + 8); ctx.closePath(); ctx.fill();
+    }
   }
 
   if (!h.hasShots) label(ctx, 'Spell has no damaging runes', W / 2, H - 34, 18 * u, 'center', '#ffb86b');
-  else if (h.time < 6) label(ctx, 'Spell auto-casts - aim with the mouse', W / 2, H - 12, 14 * u, 'center', '#c4c9ee');
+  else if (h.time < 6) label(ctx, (typeof matchMedia === 'function' && matchMedia('(hover: none)').matches ? 'Spell auto-casts - drag to aim' : 'Spell auto-casts - aim with the mouse'), W / 2, H - 12, 14 * u, 'center', '#c4c9ee');
 
   drawAim(ctx, h);
 }
@@ -956,14 +966,13 @@ function drawEnemyOverlays(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y
 
 /** Fog bank over the far side of the arena (drawn before enemies so revealed enemies stand out). */
 function drawFog(ctx: CanvasRenderingContext2D, h: HudState): void {
-  const x0 = FOG_X - 40, x1 = h.offX + h.viewW;
-  const g = ctx.createLinearGradient(x0, 0, x0 + 110, 0);
+  // a bank beyond FOG_DIST from the ward: clear inside, thickening over the next ~110 px
+  const g = ctx.createRadialGradient(WARD_X, WARD_Y, FOG_DIST - 40, WARD_X, WARD_Y, FOG_DIST + 70);
   g.addColorStop(0, 'rgba(200,210,225,0)');
   g.addColorStop(1, 'rgba(200,210,225,0.62)');
-  ctx.fillStyle = g; ctx.fillRect(x0, 0, 110, H);
-  ctx.fillStyle = 'rgba(200,210,225,0.62)'; ctx.fillRect(x0 + 110, 0, Math.max(0, x1 - x0 - 110), H);
+  ctx.fillStyle = g; ctx.fillRect(h.offX, 0, h.viewW, H);
   for (let i = 0; i < 7; i++) {
-    const bx = FOG_X + 60 + ((i * 137 + h.time * 14) % 420) - 60, by = 40 + ((i * 83) % 520) + Math.sin(h.time * 0.5 + i) * 20;
+    const bx = WARD_X + FOG_DIST + 20 + ((i * 137 + h.time * 14) % 420) - 60, by = 40 + ((i * 83) % 520) + Math.sin(h.time * 0.5 + i) * 20;
     const rg = ctx.createRadialGradient(bx, by, 0, bx, by, 110);
     rg.addColorStop(0, 'rgba(235,240,248,0.5)');
     rg.addColorStop(1, 'rgba(235,240,248,0)');

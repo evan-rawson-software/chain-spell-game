@@ -39,11 +39,13 @@ const defs: Record<string, Def> = {
   fireball: {
     name: 'Fireball', rarity: 'starter', inputs: ['R'], outputs: [], mana: 2, castTime: 0.2,
     shot: shot('fire', 40, { aoeRadius: 50, size: 10, speed: 450, statuses: [st('burn', 6, 3)] }),
+    socketBonus: { rune: 'amplify', mods: [flat('aoeRadius', 20)], text: 'Fed by Amplify: +20 blast radius' },
     description: 'Hurls a fireball: 40 fire damage in a small blast, and sets enemies burning.',
   },
   frost_bolt: {
     name: 'Frost Bolt', rarity: 'starter', inputs: ['B'], outputs: [], mana: 2, castTime: 0.2,
     shot: shot('frost', 25, { statuses: [st('slow', 0.4, 2)] }),
+    socketBonus: { complex: true, mods: [flat('damage', 10)], text: 'Fed by a complex color: +10 damage' },
     description: 'A shard of ice: 25 frost damage that slows the target by 40% for 2s.',
   },
 
@@ -51,26 +53,31 @@ const defs: Record<string, Def> = {
   ember_dart: {
     name: 'Ember Dart', rarity: 'common', inputs: ['R'], outputs: [], mana: 1, castTime: 0.1,
     shot: shot('fire', 20, { speed: 650, size: 6 }),
+    socketBonus: { complex: true, mods: [flat('pierce', 1)], text: 'Fed by a complex color: pierces 1 extra enemy' },
     description: 'A fast, cheap dart of flame. 20 fire damage.',
   },
   ice_shard: {
     name: 'Ice Shard', rarity: 'common', inputs: ['B'], outputs: [], mana: 1, castTime: 0.15,
     shot: shot('frost', 16, { speed: 600, size: 6, pierce: 1 }),
+    socketBonus: { rune: 'frost_focus', mods: [inc('damage', 0.4)], text: 'Fed by Frost Focus: +40% damage' },
     description: 'A sliver of ice that pierces one extra enemy. 16 frost damage.',
   },
   thorn_shot: {
     name: 'Thorn Shot', rarity: 'common', inputs: ['G'], outputs: [], mana: 2, castTime: 0.2,
     shot: shot('nature', 14, { speed: 550, statuses: [st('poison', 4, 4)] }),
+    socketBonus: { rune: 'bloom', mods: [inc('statusPotency', 0.5)], text: 'Fed by Bloom: +50% poison potency' },
     description: 'A barbed thorn: 14 nature damage and a stacking poison (4 dps per stack, 4s).',
   },
   prism_fork: {
     name: 'Prism Fork', rarity: 'common', inputs: ['R'], outputs: ['R', 'G', 'B'], mana: 2, castTime: 0.1,
     augments: [inc('speed', 0.2), flat('damage', 4)],
+    socketBonus: { rune: 'amplify', mods: [inc('damage', 0.15)], text: 'Fed by Amplify: descendants deal +15% damage' },
     description: 'Turns Red into Red, Green and Blue streams. Shots beyond it fly 20% faster and deal +4 damage.',
   },
   bloom: {
     name: 'Bloom', rarity: 'common', inputs: ['G'], outputs: ['G', 'G', 'G'], mana: 3, castTime: 0.1,
     augments: [inc('statusDuration', 0.3)],
+    socketBonus: { complex: true, mods: [inc('statusPotency', 0.25)], text: 'Fed by a complex color: descendants have +25% status potency' },
     description: 'Splits Green into three Green streams. Status effects beyond it last 30% longer.',
   },
   verdigris: {
@@ -113,6 +120,7 @@ const defs: Record<string, Def> = {
   pierce: {
     name: 'Pierce', rarity: 'uncommon', inputs: ['B'], outputs: ['B', 'B'], mana: 3, castTime: 0.1,
     augments: [flat('pierce', 2)],
+    socketBonus: { rune: 'frost_focus', mods: [flat('pierce', 1)], text: 'Fed by Frost Focus: descendants pierce 1 more' },
     description: 'Splits one Blue stream into two Blue streams. Shots beyond it pass through 2 extra enemies.',
   },
   blast: {
@@ -153,16 +161,19 @@ const defs: Record<string, Def> = {
   lightning_bolt: {
     name: 'Lightning Bolt', rarity: 'uncommon', inputs: ['Y'], outputs: [], mana: 3, castTime: 0.2,
     shot: shot('lightning', 30, { speed: 700, size: 7, chain: 2 }),
+    socketBonus: { color: 'W', mods: [flat('chain', 2)], text: 'Fed by White: chains 2 extra times' },
     description: 'A crackling bolt: 30 lightning damage that chains to 2 more enemies. Big bonus on Wet targets.',
   },
   arcane_missile: {
     name: 'Arcane Missile', rarity: 'uncommon', inputs: ['P'], outputs: [], mana: 3, castTime: 0.2,
     shot: shot('arcane', 28, { speed: 450, size: 7, homing: 4, count: 2, spreadDeg: 16 }),
+    socketBonus: { rune: 'seeker', mods: [flat('count', 1)], text: 'Fed by Seeker: +1 missile' },
     description: 'Two homing missiles of raw arcana, 28 damage each.',
   },
   squall: {
     name: 'Squall', rarity: 'uncommon', inputs: ['T'], outputs: [], mana: 3, castTime: 0.25,
     shot: shot('storm', 22, { speed: 400, size: 11, aoeRadius: 70, statuses: [st('wet', 0.5, 5)] }),
+    socketBonus: { rune: 'verdigris', mods: [inc('statusDuration', 0.5)], text: 'Fed by Verdigris: Wet lasts 50% longer' },
     description: 'A rolling storm cell: 22 storm damage in a wide area. Soaks enemies, so lightning hits harder.',
   },
   hex: {
@@ -185,6 +196,7 @@ const defs: Record<string, Def> = {
   empower: {
     name: 'Empower', rarity: 'rare', inputs: ['R'], outputs: ['R', 'P'], mana: 4, castTime: 0.15,
     augments: [more('damage', 0.5)],
+    socketBonus: { color: 'W', mods: [more('damage', 0.2)], text: 'Fed by White: descendants deal x1.2 damage' },
     description: 'Turns Red into Red and Purple streams. Shots beyond it deal x1.5 damage (multiplies after all other bonuses).',
   },
   chromatic_lens: {
@@ -200,6 +212,7 @@ const defs: Record<string, Def> = {
   meteor: {
     name: 'Meteor', rarity: 'rare', inputs: ['R', 'R', 'B'], outputs: [], mana: 4, castTime: 0.5,
     shot: shot('fire', 160, { speed: 350, size: 14, aoeRadius: 100, statuses: [st('burn', 12, 4), st('slow', 0.3, 2)] }),
+    socketBonus: { complex: true, mods: [more('damage', 0.25)], text: 'Fed by a complex color: x1.25 damage' },
     description: 'Needs Red, Red and Blue. A huge slow meteor: 160 fire damage in a wide blast, burns and chills.',
   },
   spectrum_nova: {
@@ -232,6 +245,7 @@ const defs: Record<string, Def> = {
   poison_cloud: {
     name: 'Poison Cloud', rarity: 'common', inputs: ['G'], outputs: [], mana: 2, castTime: 0.25,
     shot: shot('nature', 6, { speed: 300, size: 12, aoeRadius: 85, statuses: [st('poison', 5, 5)] }),
+    socketBonus: { complex: true, mods: [flat('aoeRadius', 25)], text: 'Fed by a complex color: +25 blast radius' },
     description: 'A slow toxic cloud: 6 nature damage in a wide area and a stacking poison (5 dps per stack, 5s).',
   },
 
@@ -316,6 +330,7 @@ const defs: Record<string, Def> = {
   sun_lance: {
     name: 'Sun Lance', rarity: 'rare', inputs: ['Y'], outputs: [], mana: 4, castTime: 0.35,
     shot: shot('fire', 75, { speed: 700, size: 9, pierce: 3, statuses: [st('burn', 10, 4)] }),
+    socketBonus: { rune: 'blast', mods: [flat('aoeRadius', 30)], text: 'Fed by Blast: explodes in a 30px radius' },
     description: 'A beam of searing light: 75 fire damage, piercing 3 extra enemies and setting them ablaze.',
   },
   glass_sigil: {
@@ -348,6 +363,38 @@ const defs: Record<string, Def> = {
   momentum: {
     name: 'Momentum', rarity: 'rare', inputs: ['R'], outputs: [], mana: 3, castTime: 0.1, keystone: 'momentum',
     description: 'Keystone. +10% damage for every cast since your ward was last hit, up to +100%. Resets when the ward is hit.',
+  },
+  // ------------------------------------------------------------ Fused (forge recipes only; see fusions.ts)
+  steam_burst: {
+    name: 'Steam Burst', rarity: 'fused', inputs: ['R', 'B'], outputs: [], mana: 4, castTime: 0.35,
+    shot: shot('fire', 70, { speed: 420, size: 13, aoeRadius: 90, statuses: [st('burn', 8, 3), st('slow', 0.4, 3)] }),
+    description: 'Needs Red and Blue. Fire and frost collide: 70 fire damage in a wide blast that burns and chills.',
+  },
+  frostflare_barrage: {
+    name: 'Frostflare Barrage', rarity: 'fused', inputs: ['R', 'B'], outputs: [], mana: 3, castTime: 0.25,
+    shot: shot('pure', 24, { speed: 650, size: 6, count: 4, spreadDeg: 24, pierce: 1, statuses: [st('burn', 4, 2), st('slow', 0.3, 2)] }),
+    socketBonus: { rune: 'split', mods: [flat('count', 2)], text: 'Fed by Split: +2 projectiles' },
+    description: 'Needs Red and Blue. Four piercing shards of ember and ice in a fan, each burning and chilling.',
+  },
+  briar_inferno: {
+    name: 'Briar Inferno', rarity: 'fused', inputs: ['G', 'R'], outputs: [], mana: 4, castTime: 0.3,
+    shot: shot('nature', 34, { speed: 450, size: 12, aoeRadius: 70, statuses: [st('poison', 7, 4), st('burn', 7, 3)] }),
+    description: 'Needs Green and Red. A burning thornbush: 34 nature damage in a blast that poisons and ignites.',
+  },
+  stormfrost_spear: {
+    name: 'Stormfrost Spear', rarity: 'fused', inputs: ['Y', 'B'], outputs: [], mana: 4, castTime: 0.3,
+    shot: shot('lightning', 55, { speed: 750, size: 8, chain: 3, pierce: 1, statuses: [st('wet', 0.5, 4), st('slow', 0.4, 3)] }),
+    description: 'Needs Yellow and Blue. A spear of frozen lightning: 55 damage, pierces once, chains 3 times, soaks and chills.',
+  },
+  astral_swarm: {
+    name: 'Astral Swarm', rarity: 'fused', inputs: ['P'], outputs: [], mana: 4, castTime: 0.35,
+    shot: shot('arcane', 22, { speed: 460, size: 7, count: 5, spreadDeg: 36, homing: 6 }),
+    description: 'Needs Purple. Five fast homing stars of raw arcana, 22 damage each.',
+  },
+  apex_conduit: {
+    name: 'Apex Conduit', rarity: 'fused', inputs: ['R'], outputs: ['R', 'R', 'P'], mana: 4, castTime: 0.15,
+    augments: [more('damage', 0.4), inc('damage', 0.3)],
+    description: 'Splits Red into two Red streams and a Purple one. Shots beyond it deal 30% more, then x1.4 damage.',
   },
 };
 
@@ -444,6 +491,7 @@ export function runeTooltip(def: RuneDef): string {
   }
   for (const m of def.augments ?? []) lines.push(`${fmtMod(m)} to descendants`);
   for (const m of def.globals ?? []) lines.push(`${fmtMod(m)} (whole spell)`);
+  if (def.socketBonus) lines.push(`Socket: ${def.socketBonus.text}`);
   return lines.join('\n');
 }
 

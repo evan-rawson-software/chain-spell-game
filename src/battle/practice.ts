@@ -5,7 +5,9 @@
  */
 import type { PracticeHandle, PracticeOptions } from '../contracts';
 import type { CastPlan, FloorDef, SpellGraph } from '../types';
-import { createCaster, createLoop, type Point } from './core';
+import { getSettings, onSettings } from '../settings';
+import { BUTTON_H, BUTTON_W, createAbility, drawAbilityButton, ignoreHotkey, inButton, type AbilityController, type ButtonBox } from './abilityfx';
+import { createCaster, createLoop, type LoopOptions, type Point } from './core';
 import { spawnEnemy, sweepDead, updateEnemies } from './enemies';
 import { comboState } from './juice';
 import { keystoneFlags, momentumLabel } from './keystones';
@@ -14,7 +16,7 @@ import { updatePlayerProjectiles } from './projectiles';
 import { render, type HudState } from './render';
 import { setSoundFilter } from './sound';
 
-const PRACTICE_FLOOR: FloorDef = { floor: 1, kind: 'normal', waves: [], hpScale: 1 };
+const PRACTICE_FLOOR: FloorDef = { floor: 1, kind: 'normal', waves: [], hpScale: 1, act: 1 };
 /** Dummy HP: big enough to read the bar draining, refilled when it falls under REFILL_BELOW. */
 const DUMMY_HP = 20000;
 const REFILL_BELOW = 0.35;
@@ -32,6 +34,11 @@ const DUMMIES: DummySpec[] = [
 export function createPractice(container: HTMLElement, opts: PracticeOptions): PracticeHandle {
   // the spell strip is not drawn here (the editor already shows the graph), so graph/catalog go unused
   let plan = opts.plan;
+  // the run passes its ability so it can be tried here (PracticeOptions may not declare it yet)
+  const abilityId = opts.ability;
+  const ability: AbilityController | null = abilityId ? createAbility(abilityId) : null;
+  const abilityBox: ButtonBox = { x: 8, y: 0, w: BUTTON_W, h: BUTTON_H };
+  const shakeFor = (): number => (reducedMotion ? 0.15 : 0.5) * getSettings().shake;
 
   const canvas = document.createElement('canvas');
   canvas.className = 'battle-canvas';
@@ -45,7 +52,7 @@ export function createPractice(container: HTMLElement, opts: PracticeOptions): P
 
   // keep sounds quiet: only reactions are audible, at reduced volume
   setSoundFilter((name, o) =>
-    name === 'reaction' || name === 'shatter' ? { ...o, volume: (o?.volume ?? 1) * 0.4 } : null);
+    name === 'reaction' || name === 'shatter' || name === 'explosion' ? { ...o, volume: (o?.volume ?? 1) * 0.4 } : null);
 
   // dummies
   const dummies: { e: Enemy; spec: DummySpec }[] = [];
@@ -98,6 +105,7 @@ export function createPractice(container: HTMLElement, opts: PracticeOptions): P
     scale = Math.min(cssW / W, cssH / VIEW_H);
     offX = (cssW - W * scale) / 2;
     offY = cssH / 2 - MUZZLE_Y * scale;
+    abilityBox.y = cssH - BUTTON_H - 8;
   }
   resize();
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
@@ -113,9 +121,41 @@ export function createPractice(container: HTMLElement, opts: PracticeOptions): P
     mouse.inside = true;
   };
   const onLeave = (): void => { mouse.inside = false; };
-  const onCtx = (ev: Event): void => ev.preventDefault();
+  function useAbility(fromButton = false): void {
+    if (!ability) return;
+    const nearest = ((): Point | null => {
+      let best: Point | null = null;
+      let bd = Infinity;
+      for (const e of world.enemies) {
+        if (e.dead) continue;
+        const d = (e.x - MUZZLE_X) ** 2 + (e.y - MUZZLE_Y) ** 2;
+        if (d < bd) { bd = d; best = { x: e.x, y: e.y }; }
+      }
+      return best;
+    })();
+    ability.use(world, caster, fromButton ? nearest : aimPoint());
+  }
+  let lastType = 'mouse';
+  const onUp = (ev: PointerEvent): void => { if (ev.pointerType === 'touch') mouse.inside = false; };
+  const onDown = (ev: PointerEvent): void => {
+    lastType = ev.pointerType;
+    if (ev.pointerType === 'touch') onMove(ev);
+    if (ev.button !== 0 || !ability) return;
+    const r = canvas.getBoundingClientRect();
+    if (inButton(abilityBox, ev.clientX - r.left, ev.clientY - r.top)) useAbility(true);
+  };
+  const onCtx = (ev: Event): void => { ev.preventDefault(); if (lastType !== 'touch') useAbility(); };
+  const onKey = (ev: KeyboardEvent): void => {
+    if (!ability || (ev.code !== 'Space' && ev.key !== ' ') || ignoreHotkey(ev)) return;
+    ev.preventDefault();
+    useAbility();
+  };
+  window.addEventListener('keydown', onKey);
+  canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerleave', onLeave);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
   canvas.addEventListener('contextmenu', onCtx);
 
   function aimPoint(): Point | null {
@@ -135,6 +175,7 @@ export function createPractice(container: HTMLElement, opts: PracticeOptions): P
     world.wardFlash = Math.max(0, world.wardFlash - dt);
     world.wardHp = world.wardMax; // nothing attacks, but never let the ward drop
 
+    ability?.update(dt);
     caster.update(world, dt, aimPoint, null);
 
     for (const d of dummies) {
@@ -237,9 +278,12 @@ export function createPractice(container: HTMLElement, opts: PracticeOptions): P
     render(ctx, world, hud);
     ctx.restore();
     drawStats();
+    if (ability) { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); drawAbilityButton(ctx, abilityBox, ability, world.time); }
   }
 
-  const loop = createLoop({ world, update, draw, hitStop: false, shakeMul: reducedMotion ? 0.15 : 0.5 });
+  const loopOpts: LoopOptions = { world, update, draw, hitStop: false, shakeMul: shakeFor() };
+  const offSettings = onSettings(() => { loopOpts.shakeMul = shakeFor(); });
+  const loop = createLoop(loopOpts);
   let destroyed = false;
 
   return {
@@ -258,10 +302,15 @@ export function createPractice(container: HTMLElement, opts: PracticeOptions): P
       if (destroyed) return;
       destroyed = true;
       loop.destroy();
+      offSettings();
+      window.removeEventListener('keydown', onKey);
+      canvas.removeEventListener('pointerdown', onDown);
       ro?.disconnect();
       window.removeEventListener('resize', resize);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerleave', onLeave);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
       canvas.removeEventListener('contextmenu', onCtx);
       canvas.remove();
       container.classList.remove('practice-root');

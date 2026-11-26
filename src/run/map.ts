@@ -1,17 +1,20 @@
 import type { MapNode, MapNodeKind, RunMap } from '../types';
 import { createRng, type Rng } from './rng';
 
-export const MAP_ROWS = 10;
+/** Rows per act map (row 6 = the act boss). */
+export const MAP_ROWS = 6;
+export const ACTS = 3;
 
 const KIND_WEIGHTS: [MapNodeKind, number][] = [
   ['battle', 50], ['elite', 12], ['shop', 13], ['forge', 12], ['shrine', 13], ['event', 10], ['treasure', 4], ['rest', 6],
 ];
-/** First row where each kind may appear (default 2). */
-const MIN_ROW: Partial<Record<MapNodeKind, number>> = { elite: 4, treasure: 3, rest: 3 };
+/** First row where each kind may appear (default 2): elites from row 3, treasure and rest from row 2. */
+const MIN_ROW: Partial<Record<MapNodeKind, number>> = { elite: 3 };
 /** The row before the boss. */
 const REST_KINDS: MapNodeKind[] = ['shop', 'forge', 'shrine', 'rest'];
 
-export const nodeId = (row: number, col: number): string => `r${row}c${col}`;
+/** Node ids carry the act so seeded offers differ between acts. */
+export const nodeId = (act: number, row: number, col: number): string => `a${act}r${row}c${col}`;
 
 function shuffle<T>(arr: T[], rng: Rng): T[] {
   const a = [...arr];
@@ -33,13 +36,16 @@ function rowKinds(row: number, rng: Rng): MapNodeKind[] {
   const pool = KIND_WEIGHTS.filter(([k]) => row >= (MIN_ROW[k] ?? 2));
   const kinds = Array.from({ length: n }, () => rng.weighted(pool, ([, w]) => w)[0]);
   if (!kinds.includes('battle')) kinds[rng.int(n)] = 'battle';
-  // Every map has at least one elite (row 5), without removing the row's only battle.
-  if (row === 5 && !kinds.includes('elite')) {
-    const battles = kinds.filter((k) => k === 'battle').length;
-    const spots = kinds.map((k, i) => (k === 'battle' && battles === 1 ? -1 : i)).filter((i) => i >= 0);
-    kinds[rng.pick(spots)] = 'elite';
-  }
   return kinds;
+}
+
+/** Guarantees at least one elite on row 3 or 4 (never removing a row's only battle). */
+function ensureElite(rows: MapNodeKind[][], rng: Rng): void {
+  if (rows[2].includes('elite') || rows[3].includes('elite')) return;
+  const target = rows[2 + rng.int(2)];
+  const battles = target.filter((k) => k === 'battle').length;
+  const spots = target.map((k, i) => (k === 'battle' && battles === 1 ? -1 : i)).filter((i) => i >= 0);
+  target[rng.pick(spots)] = 'elite';
 }
 
 /**
@@ -67,13 +73,13 @@ function linkRows(a: number, b: number, rng: Rng): [number, number][] {
   return path;
 }
 
-/** Deterministic map for a run seed. */
-export function generateMap(seed: number): RunMap {
-  const rng = createRng((seed ^ 0x9e3779b9) >>> 0);
-  const rows: MapNode[][] = [];
-  for (let r = 1; r <= MAP_ROWS; r++) {
-    rows.push(rowKinds(r, rng).map((kind, col) => ({ id: nodeId(r, col), row: r, col, kind, next: [] })));
-  }
+/** Deterministic map for a run seed and act (1..3). */
+export function generateMap(seed: number, act = 1): RunMap {
+  const rng = createRng(((seed ^ 0x9e3779b9) + Math.imul(act, 0x85ebca6b)) >>> 0);
+  const kinds: MapNodeKind[][] = [];
+  for (let r = 1; r <= MAP_ROWS; r++) kinds.push(rowKinds(r, rng));
+  ensureElite(kinds, rng);
+  const rows: MapNode[][] = kinds.map((ks, ri) => ks.map((kind, col) => ({ id: nodeId(act, ri + 1, col), row: ri + 1, col, kind, next: [] })));
   for (let r = 0; r < MAP_ROWS - 1; r++) {
     for (const [i, j] of linkRows(rows[r].length, rows[r + 1].length, rng)) rows[r][i].next.push(rows[r + 1][j].id);
   }
@@ -93,7 +99,7 @@ export function reachable(map: RunMap, at: string | null): MapNode[] {
   return n ? n.next.map((id) => findNode(map, id)).filter((x): x is MapNode => !!x) : [];
 }
 
-/** Cheap structural check used when loading saves. */
+/** Cheap structural check used when loading saves (a 10-row map from an older version fails it). */
 export function isValidMap(m: unknown): m is RunMap {
   const rows = (m as RunMap | undefined)?.rows;
   if (!Array.isArray(rows) || rows.length !== MAP_ROWS) return false;

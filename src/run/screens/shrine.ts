@@ -23,7 +23,7 @@ export function shrineScreen(app: App): void {
     const gold = Math.round(BARGAIN_GOLD * totals.goldMul);
 
     const box = el('div', 'rn-rewardbox', undefined, s);
-    el('h2', 'rn-h2', `Shrine - ${rowLabel(node.row)}`, box);
+    el('h2', 'rn-h2', `Shrine - ${rowLabel(node.row, app.run.act)}`, box);
     el('p', 'rn-sub', 'Accept a blessing, or strike a Dark Bargain.', box);
     const cards = el('div', 'rn-cards', undefined, box);
     for (const b of blessings) {

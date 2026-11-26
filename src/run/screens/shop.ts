@@ -7,7 +7,8 @@ import { createRng } from '../rng';
 import { applyReward, forgeRune, removeBoon, spendGold } from '../state';
 import { boonChip, button, el, forgePreview, rowLabel, runePicker, runePickerMulti, runeCard, topBar } from '../ui';
 import type { RuneInstance } from '../../types';
-import { cutCount, dropRune, instTier, runeLabel, sellRune, sellValue, transmute } from '../trade';
+import { logPurchase } from '../telemetry';
+import { canTransmute, cutCount, dropRune, instTier, runeLabel, sellRune, sellValue, transmute } from '../trade';
 
 export const RUNE_PRICE: Record<string, number> = { starter: 30, common: 30, uncommon: 50, rare: 80 };
 export const FORGE_PRICE = 40;
@@ -22,7 +23,7 @@ export function shopScreen(app: App): void {
   if (!node) { app.goto.map(); return; }
   app.show((s) => {
     s.classList.add('rn-col');
-    const stock = rollRewards(floorDef(node.row), createRng(nodeSeed(app.run.seed, node.id, 2)), SHOP_STOCK);
+    const stock = rollRewards(floorDef(node.row, 'battle', undefined, undefined, app.run.act), createRng(nodeSeed(app.run.seed, node.id, 2)), SHOP_STOCK);
     let service: Service = null;
     let pendingForge: string | null = null;
     let pendingSell: string | null = null;
@@ -34,7 +35,7 @@ export function shopScreen(app: App): void {
 
     const render = (): void => {
       s.querySelector('.rn-topbar')?.remove();
-      const { bar, right } = topBar(app, s, `Shop - ${rowLabel(node.row)}`);
+      const { bar, right } = topBar(app, s, `Shop - ${rowLabel(node.row, app.run.act)}`);
       s.insertBefore(bar, body);
       button('Leave shop', 'rn-btn primary big', () => app.leaveNode(), right);
 
@@ -53,6 +54,7 @@ export function shopScreen(app: App): void {
         if (sold) card.classList.add('sold');
         const cost = price(RUNE_PRICE[def.rarity] ?? 30);
         const b = button(sold ? 'Sold' : `Buy ● ${cost}`, 'rn-btn rn-buy', () => {
+          logPurchase(app.run, { row: node.row, kind: 'rune', defId: r.defId, gold: cost });
           app.setRun(applyReward(spendGold(app.run, cost), r));
           app.sold = [...app.sold, i];
           app.save('shop');
@@ -86,13 +88,13 @@ export function shopScreen(app: App): void {
 
       const sellSvc = el('div', 'rn-service', undefined, services);
       el('div', 'rn-card-name', 'Sell a rune', sellSvc);
-      el('div', 'rn-card-desc', 'Common 15, uncommon 25, rare 40 gold; +10 if forged.', sellSvc);
+      el('div', 'rn-card-desc', 'Common 15, uncommon 25, rare 40, fused 50 gold; +10 if forged.', sellSvc);
       button('Sell...', 'rn-btn', () => { service = service === 'sell' ? null : 'sell'; pendingSell = null; render(); }, sellSvc)
         .disabled = app.run.owned.length === 0;
 
       const transSvc = el('div', 'rn-service', undefined, services);
       el('div', 'rn-card-name', 'Transmute runes', transSvc);
-      el('div', 'rn-card-desc', 'Merge two runes of the same rarity into a random rune one rarity higher (two rares: a random rare or keystone). Free.', transSvc);
+      el('div', 'rn-card-desc', 'Merge two runes of the same rarity into a random rune one rarity higher (two rares: a random rare or keystone). Free. Fused runes cannot be transmuted.', transSvc);
       const tb = button('Transmute...', 'rn-btn', () => { service = service === 'transmute' ? null : 'transmute'; pendingTrans = []; render(); }, transSvc);
       tb.disabled = !hasPair(app.run.owned);
 
@@ -112,6 +114,7 @@ export function shopScreen(app: App): void {
           button(`Sell ${runeLabel(target)} for ${sellValue(target)} gold`, 'rn-btn primary', () => {
             const res = sellRune(app.run, target.uid);
             if (!res) return;
+            logPurchase(app.run, { row: node.row, kind: 'sell', defId: target.defId, gold: -res.gold });
             app.setRun(res.run);
             app.save('shop');
             sfx('buy');
@@ -127,7 +130,7 @@ export function shopScreen(app: App): void {
         el('div', 'rn-sub', 'Choose two runes of the same rarity', panel);
         const first = app.run.owned.find((o) => o.uid === pendingTrans[0]);
         runePickerMulti(panel, app.run.owned, inGraphAll, pendingTrans,
-          (inst) => pendingTrans.length < 2 && (!first || instTier(inst) === instTier(first)),
+          (inst) => canTransmute(inst) && pendingTrans.length < 2 && (!first || instTier(inst) === instTier(first)),
           (uid) => { pendingTrans = pendingTrans.includes(uid) ? pendingTrans.filter((u) => u !== uid) : [...pendingTrans, uid]; render(); });
         if (pendingTrans.length === 2) {
           const d1 = dropRune(app.run, pendingTrans[0]);
@@ -137,6 +140,7 @@ export function shopScreen(app: App): void {
             const ops = app.ns.ops ?? 0;
             const res = transmute(app.run, pendingTrans[0], pendingTrans[1], createRng(nodeSeed(app.run.seed, node.id, 20 + ops)));
             if (!res) return;
+            logPurchase(app.run, { row: node.row, kind: 'transmute', defId: res.result.id, gold: 0 });
             app.ns = { ...app.ns, ops: ops + 1 };
             app.setRun(res.run);
             app.save('shop');
@@ -158,6 +162,7 @@ export function shopScreen(app: App): void {
         if (target) {
           forgePreview(target, panel);
           button(`Forge for ${forgeCost} gold`, 'rn-btn primary', () => {
+            logPurchase(app.run, { row: node.row, kind: 'forge', defId: target.defId, gold: forgeCost });
             app.setRun(forgeRune(spendGold(app.run, forgeCost), target.uid));
             app.save('shop');
             sfx('forge');
@@ -176,6 +181,7 @@ export function shopScreen(app: App): void {
           chip.classList.add('pickable');
           chip.textContent = `${c.name} - ${c.description}`;
           chip.addEventListener('click', () => {
+            logPurchase(app.run, { row: node.row, kind: 'curse', gold: curseCost });
             app.setRun(removeBoon(spendGold(app.run, curseCost), c.id));
             app.save('shop');
             sfx('buy');
@@ -193,6 +199,7 @@ export function shopScreen(app: App): void {
 function hasPair(owned: RuneInstance[]): boolean {
   const seen = new Set<string>();
   for (const o of owned) {
+    if (!canTransmute(o)) continue;
     const t = instTier(o);
     if (seen.has(t)) return true;
     seen.add(t);

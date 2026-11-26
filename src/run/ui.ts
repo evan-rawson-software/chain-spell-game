@@ -1,11 +1,13 @@
 import { CATALOG, runeTooltip } from '../data/runes';
 import { upgradeDef, defOf } from '../spell';
 import { sfx, type SfxName } from '../audio';
-import { COLOR_HEX } from '../types';
+import { getSettings } from '../settings';
+import { COLOR_HEX, COLOR_SHAPE } from '../types';
 import type { BoonDef, EliteTraitId, EnemyKind, HazardId, MapNodeKind, RuneDef, RuneInstance } from '../types';
 import type { NodePreview } from './floors';
 import type { App } from './app';
 import { MAP_ROWS } from './map';
+import { recordRunEnd } from './history';
 import { effectiveWardHp, clearRun } from './state';
 
 export function el<K extends keyof HTMLElementTagNameMap>(
@@ -28,13 +30,19 @@ const COLOR_LABEL: Record<string, string> = {
   R: 'Red', G: 'Green', B: 'Blue', Y: 'Yellow (red + green)', P: 'Purple (red + blue)', T: 'Teal (green + blue)', W: 'White (all colors)',
 };
 
+/** Color pips; with colorblind mode on every pip carries its COLOR_SHAPE glyph. */
 export function pips(colors: RuneDef['inputs'], parent: HTMLElement): void {
   const wrap = el('span', 'rn-pips', undefined, parent);
+  const shapes = getSettings().colorblind;
   for (const c of colors) {
     const p = el('span', 'rn-pip', undefined, wrap);
     p.style.background = COLOR_HEX[c];
     p.title = COLOR_LABEL[c] ?? c;
-    if (c === 'Y' || c === 'P' || c === 'T' || c === 'W') {
+    if (shapes) {
+      p.textContent = COLOR_SHAPE[c];
+      p.classList.add('letter', 'shape');
+      p.style.color = c === 'W' || c === 'Y' || c === 'G' ? '#111' : '#fff';
+    } else if (c === 'Y' || c === 'P' || c === 'T' || c === 'W') {
       p.textContent = c;
       p.classList.add('letter');
       p.style.color = c === 'W' || c === 'Y' ? '#111' : '#fff';
@@ -52,7 +60,7 @@ export function fmtTime(sec: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-export const RARITY_LABEL: Record<string, string> = { starter: 'Starter', common: 'Common', uncommon: 'Uncommon', rare: 'Rare' };
+export const RARITY_LABEL: Record<string, string> = { starter: 'Starter', common: 'Common', uncommon: 'Uncommon', rare: 'Rare', fused: 'Fused' };
 
 /** A rune card (as on the reward screen). `tag` 'button' makes it clickable. */
 export function runeCard(def: RuneDef, parent: HTMLElement, tag: 'button' | 'div' = 'button'): HTMLElement {
@@ -98,7 +106,7 @@ export const NODE_INFO: Record<MapNodeKind, { glyph: string; label: string; desc
   event: { glyph: '?', label: 'Event', desc: 'A short choice with a tradeoff. +1 max mana.' },
   treasure: { glyph: '◆', label: 'Treasure', desc: 'Pick 1 of 3 rare runes, at least one a keystone. +1 max mana.' },
   rest: { glyph: '☾', label: 'Rest', desc: '+10 max ward HP, or forge one rune for free. +1 max mana.' },
-  boss: { glyph: '☠', label: 'Boss', desc: 'The final fight. Winning ends the run.' },
+  boss: { glyph: '☠', label: 'Boss', desc: "The act's boss. Acts I and II give an elite-style reward; beating the third boss wins the run." },
 };
 
 /** Map preview texts (DESIGN.md: Enemies, Hazards, Elite traits, Bosses). */
@@ -169,7 +177,11 @@ export function abandonControl(app: App, parent: HTMLElement): void {
       button('Abandon run', 'rn-btn danger', () => render(true), wrap);
     } else {
       el('span', 'rn-note', 'Abandon this run?', wrap);
-      button('Yes', 'rn-btn danger solid', () => { clearRun(); app.goto.title(); }, wrap);
+      button('Yes', 'rn-btn danger solid', () => {
+        if (app.run.stats.battles > 0) recordRunEnd(app.run, 'abandoned');
+        clearRun();
+        app.goto.title();
+      }, wrap);
       button('No', 'rn-btn', () => render(false), wrap);
     }
   };
@@ -187,7 +199,16 @@ export function topBar(app: App, screen: HTMLElement, heading: string, tag?: 'el
   return { bar, left, right };
 }
 
-export const rowLabel = (row: number): string => `Row ${row}/${MAP_ROWS}`;
+export const rowLabel = (row: number, act: number): string => `Act ${act} · Row ${row}/${MAP_ROWS}`;
+
+/** The ⚙ button: opens the settings screen and returns to `back` afterwards. */
+export function gearButton(app: App, parent: HTMLElement, back: () => void): HTMLButtonElement {
+  const b = button('⚙', 'rn-btn rn-gear', () => app.openSettings(back), parent);
+  b.title = 'Settings';
+  b.setAttribute('aria-label', 'Settings');
+  return b;
+}
+
 
 /** Compact selectable list of owned runes. */
 export function runePicker(

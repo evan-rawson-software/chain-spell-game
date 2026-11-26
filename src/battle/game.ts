@@ -2,7 +2,9 @@ import type { BattleHandle, BattleOptions } from '../contracts';
 import type { EnemyKind } from '../types';
 import { enemyVisible, spawnEnemy, sweepDead, updateEnemies, updateEnemyProjectiles } from './enemies';
 import { comboState } from './juice';
-import { createCaster, createLoop, FLASH_DUR } from './core';
+import { createCaster, createLoop, FLASH_DUR, type LoopOptions } from './core';
+import { BUTTON_H, BUTTON_W, createAbility, drawAbilityButton, ignoreHotkey, inButton, type AbilityController, type ButtonBox } from './abilityfx';
+import { getSettings, onSettings } from '../settings';
 import { momentumLabel } from './keystones';
 import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, newWorld, updateFx } from './model';
 import { updatePlayerProjectiles } from './projectiles';
@@ -24,9 +26,10 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
 
   const world = newWorld(wardMaxHp, opts.mods, plan.keystones, { hazard: floor.hazard, eliteTrait: floor.eliteTrait });
   const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const shakeMul = reducedMotion ? 0.3 : 1;
+  const shakeFor = (): number => (reducedMotion ? 0.3 : 1) * getSettings().shake;
+  const ability: AbilityController | null = opts.ability ? createAbility(opts.ability) : null;
+  const abilityBox: ButtonBox = { x: 0, y: 0, w: BUTTON_W, h: BUTTON_H };
   const caster = createCaster(plan);
-  const castTime = caster.castTime;
   const hasShots = caster.hasShots;
   const largeCast = caster.largeCast;
   const flashes = caster.flashes;
@@ -36,6 +39,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   const strip = createSpellStrip(graph, catalog, plan);
   let cssW = 1, cssH = 1, dpr = 1, scale = 1, offX = 0, offY = 0;
   let stripX = 0, stripY = 0, stripW = 1, stripH = 1;
+  let portrait = false; // tall phone screen: arena is width-limited, so drop the strip for room
   function resize(): void {
     cssW = Math.max(1, container.clientWidth);
     cssH = Math.max(1, container.clientHeight);
@@ -43,15 +47,18 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     // reserve a band at the bottom for the spell strip (render transform only; world stays W x H)
-    stripH = Math.max(84, Math.min(130, cssH * 0.16));
-    const playH = Math.max(1, cssH - stripH - 8);
+    portrait = cssH > cssW * 1.15 && cssW < 700;
+    stripH = portrait ? 0 : Math.max(cssH < 480 ? 56 : 84, Math.min(130, cssH * 0.16));
+    const playH = Math.max(1, cssH - (portrait ? BUTTON_H + 28 : stripH + 8));
     scale = Math.min(cssW / W, playH / H);
     offX = (cssW - W * scale) / 2;
     offY = (playH - H * scale) / 2;
     stripW = Math.min(cssW - 16, 1100);
     stripX = (cssW - stripW) / 2;
     stripY = cssH - stripH - 6;
-    strip.layout(ctx, stripW, stripH);
+    if (!portrait) strip.layout(ctx, stripW, stripH);
+    abilityBox.x = portrait ? 8 : stripX;
+    abilityBox.y = portrait ? cssH - BUTTON_H - 10 : stripY - BUTTON_H - 8;
   }
   resize();
   const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
@@ -67,17 +74,37 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     mouse.x = (ev.clientX - r.left - offX) / scale;
     mouse.y = (ev.clientY - r.top - offY) / scale;
   }
+  /** `fromButton`: the cursor is over the HUD, so Overcast aims at the nearest enemy instead. */
+  function useAbility(fromButton = false): void {
+    if (!ability || phase === 'ending') return;
+    ability.use(world, caster, fromButton ? nearestTarget() : aimPoint());
+  }
+  let lastType = 'mouse';
   const onDown = (ev: PointerEvent): void => {
     if (ev.button !== 0) return;
+    lastType = ev.pointerType;
+    if (ability) {
+      const r = canvas.getBoundingClientRect();
+      if (inButton(abilityBox, ev.clientX - r.left, ev.clientY - r.top)) { useAbility(true); return; }
+    }
     toWorld(ev);
+    mouse.inside = true;
     mouseDown = true;
     wantFire = 0.3;
     try { canvas.setPointerCapture(ev.pointerId); } catch { /* ignore */ }
   };
   const onMove = (ev: PointerEvent): void => { toWorld(ev); mouse.inside = true; };
-  const onUp = (): void => { mouseDown = false; };
+  // a lifted finger stops steering: fall back to auto-aim at the nearest enemy
+  const onUp = (ev?: PointerEvent): void => { mouseDown = false; if (ev && ev.pointerType === 'touch') mouse.inside = false; };
   const onLeave = (): void => { mouse.inside = false; };
-  const onCtx = (ev: Event): void => ev.preventDefault();
+  const onCtx = (ev: Event): void => { ev.preventDefault(); if (lastType !== 'touch') useAbility(); };
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.code !== 'Space' && ev.key !== ' ') return;
+    if (ignoreHotkey(ev)) return;
+    ev.preventDefault();
+    useAbility();
+  };
+  window.addEventListener('keydown', onKey);
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerleave', onLeave);
@@ -90,7 +117,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   let delayT = 1.5;
   let waveIdx = 0;
   let waveT = 0;
-  let queue: { t: number; kind: EnemyKind }[] = [];
+  let queue: { t: number; kind: EnemyKind; from: 'right' | 'top' | 'bottom' }[] = [];
   let hurtT = 0;
   let prevHp = world.wardHp;
   let bannerT = 0;
@@ -105,7 +132,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   function startWave(): void {
     queue = [];
     for (const g of floor.waves[waveIdx].groups) {
-      for (let i = 0; i < g.count; i++) queue.push({ t: g.at + i * g.interval, kind: g.kind });
+      for (let i = 0; i < g.count; i++) queue.push({ t: g.at + i * g.interval, kind: g.kind, from: g.from ?? 'right' });
     }
     queue.sort((a, b) => a.t - b.t);
     waveT = 0;
@@ -117,6 +144,10 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   /** Where the next cast should go: cursor if over the canvas, else nearest on-screen enemy, else null. */
   function aimPoint(): { x: number; y: number } | null {
     if (mouse.inside) return { x: mouse.x, y: mouse.y };
+    return nearestTarget();
+  }
+
+  function nearestTarget(): { x: number; y: number } | null {
     let best: { x: number; y: number } | null = null;
     let bd = Infinity;
     for (const e of world.enemies) {
@@ -165,6 +196,8 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       world.wardHp = Math.min(world.wardMax, world.wardHp + world.mods.wardRegen * dt);
     }
 
+    ability?.update(dt);
+
     // casting
     const forced = (mouseDown || wantFire > 0) ? { x: mouse.x, y: mouse.y } : null;
     caster.update(world, dt, aimPoint, forced);
@@ -180,7 +213,8 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     } else if (phase === 'fight') {
       waveT += dt;
       while (queue.length && queue[0].t <= waveT) {
-        spawnEnemy(world, queue.shift()!.kind, floor.hpScale);
+        const q = queue.shift()!;
+        spawnEnemy(world, q.kind, floor.hpScale, undefined, { from: q.from });
       }
     }
 
@@ -222,7 +256,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
         alpha: bAlpha,
       } : null,
       overlay: phase === 'ending' ? { text: won ? 'Floor cleared' : 'The ward has shattered', good: won } : null,
-      charge: caster.charge, castTime, hasShots, mouse, orbColor, time: world.time,
+      charge: caster.charge, castTime: caster.castTime, hasShots, mouse, orbColor, time: world.time,
       sinceCast: world.time - caster.lastCast,
       ui: Math.max(1, Math.min(1.7, 1 / scale)),
       hurt: Math.min(1, hurtT / 0.5),
@@ -244,24 +278,35 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
 
     // spell strip in screen space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    strip.draw(ctx, stripX, stripY, {
-      progress: castTime > 0 ? caster.charge / castTime : 0,
-      ready: caster.charge >= castTime,
+    if (!portrait) strip.draw(ctx, stripX, stripY, {
+      progress: caster.charge / caster.castTime,
+      ready: caster.charge >= caster.castTime,
       hasShots,
-      remaining: castTime - caster.charge,
+      remaining: caster.castTime - caster.charge,
       time: world.time,
       flashes,
     });
+    if (ability) drawAbilityButton(ctx, abilityBox, ability, world.time);
+    if (portrait) {
+      ctx.fillStyle = 'rgba(196,201,238,0.75)';
+      ctx.font = '13px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Rotate your device for a bigger arena', cssW / 2, offY + H * scale + 24);
+    }
   }
 
   if (floor.waves.length === 0) { delayT = 0.5; }
-  loop = createLoop({ world, update, draw, shakeMul, done: () => ended });
+  const loopOpts: LoopOptions = { world, update, draw, shakeMul: shakeFor(), done: () => ended };
+  const offSettings = onSettings(() => { loopOpts.shakeMul = shakeFor(); });
+  loop = createLoop(loopOpts);
 
   return {
     destroy(): void {
       if (destroyed) return;
       destroyed = true;
       loop?.destroy();
+      offSettings();
+      window.removeEventListener('keydown', onKey);
       ro?.disconnect();
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointerup', onUp);

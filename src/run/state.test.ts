@@ -14,7 +14,11 @@ describe('run state', () => {
       expect(r.at).toBeNull();
       expect(r.floor).toBe(1);
       expect(r.boons).toEqual(school.boon ? [school.boon] : []);
-      expect(r.map.rows).toHaveLength(10);
+      expect(r.map.rows).toHaveLength(6);
+      expect(r.act).toBe(1);
+      expect(r.ability).toBe('overcast');
+      expect(r.loadout).toBe(0);
+      expect(r.loadouts).toEqual([r.graph, null, null]);
     }
   });
 

@@ -10,7 +10,7 @@ export function schoolScreen(app: App): void {
     s.classList.add('rn-center');
     const box = el('div', 'rn-rewardbox', undefined, s);
     el('h2', 'rn-h2', 'Choose your school', box);
-    el('p', 'rn-sub', 'Your school sets the starter runes, your first spell and a blessing.', box);
+    el('p', 'rn-sub', 'Your school sets the starter runes, your first spell and a blessing. Next you pick an ability.', box);
     if (app.dailyPending) el('p', 'rn-sub', `Daily run ${app.dailyPending}: the map and offers are the same for everyone today.`, box);
     const cards = el('div', 'rn-cards', undefined, box);
     for (const school of SCHOOLS) {
@@ -28,7 +28,7 @@ export function schoolScreen(app: App): void {
         el('strong', undefined, boon.name, b);
         el('span', undefined, ` ${boon.description}`, b);
       }
-      card.addEventListener('click', () => app.goto.newRun(school.id));
+      card.addEventListener('click', () => { app.schoolPending = school.id; app.goto.ability(); });
     }
     const actions = el('div', 'rn-actions', undefined, box);
     button('Back', 'rn-btn', () => { app.dailyPending = null; app.goto.title(); }, actions, 'uiBack');

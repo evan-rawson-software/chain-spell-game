@@ -105,6 +105,21 @@ further reactions, and is scaled by the reaction-damage battle mod.
 
 The existing Wet bonus to lightning still applies to the triggering hit.
 
+### Active ability
+Picked at run start (after the school) and used in battle with **Space**, **right-click** or the
+HUD button. One ability per run:
+- **Overcast** (20 s cooldown): fires the whole spell immediately as an extra cast; the next
+  charge then takes twice as long.
+- **Ward Pulse** (18 s): a shockwave from the circle knocks enemies within 300 px back 200 px,
+  slows them 50% for 2 s and destroys enemy projectiles inside it.
+- **Detonate** (22 s): every status on every enemy is consumed for burst damage: burn deals 3 s of
+  its damage ×2, poison its remaining damage ×1.5, slow or freeze 30 frost, wet 20 lightning,
+  weaken 25 arcane. Scaled by reaction damage; it never triggers reactions.
+
+### Directions
+Spawn groups can enter from the top or bottom edge (anywhere from x 350 to 900) as well as the
+right. Act 1 uses only the right edge; act 2 sends some groups from the top or bottom; act 3 more.
+
 ### Shot timing
 Within one cast, a shot never overtakes the shot fired before it: its speed is capped at the
 previous shot's (already capped) speed. The editor order therefore decides which shot lands first,
@@ -126,7 +141,7 @@ Hasted (+40% speed), Reflective (15% of damage taken hits the ward, max 5 per hi
 Regenerating (heals 2% max HP/s after 2 s without being hit), Burn-immune (no burn, fire −50%).
 
 ### Bosses
-Each run picks one boss from the seed; the map shows which.
+Each act ends in one of the three bosses (all three per run, seeded order); the map shows which.
 - **Lich King:** ranged volleys and summons (the original boss).
 - **Stone Golem:** slow melee; its shell cuts damage by 75%. A Shatter, Combust or Overload on it
   breaks the shell for 6 s. Every 8 s it stomps, sending a shockwave that damages the ward.
@@ -137,7 +152,7 @@ Each run picks one boss from the seed; the map shows which.
 Some battle floors (row 3+, ~30%, seeded per node) carry a hazard, shown on the map:
 - **Rain:** every enemy is permanently Wet; fire damage −25%.
 - **Heatwave:** every 5 s all enemies start Burning (3 dps, 3 s); slows are half as strong.
-- **Fog:** enemies beyond x = 650 are hidden until hit; auto-aim only targets visible enemies.
+- **Fog:** enemies more than 570 px from the ward are hidden until hit; auto-aim only targets visible enemies.
 
 ### Practice range
 A **Practice** toggle in the editor splits the canvas: the graph on top, a practice arena below.
@@ -179,13 +194,17 @@ Several copies of the same keystone in one spell count once.
 
 ## 5. Run structure
 
-### Map
-- **Branching map.** 10 rows, seeded from the run seed. Row *r* uses floor *r*'s difficulty
-  (waves and HP scaling). The player picks one node per row, moving along the map's edges.
-- Row 1: 3 battle nodes. Rows 2–8: 2–4 nodes each, at least one battle per row, elites only from
-  row 4 and always at least one on row 5. Row 9: a rest row (shop / forge / shrine only). Row 10: a single boss node.
-- Edges link each node to 1–2 nodes in nearby columns of the next row, without crossing. Every
-  node in rows 2–10 has a way in and every node in rows 1–9 has a way out.
+### Acts and map
+- A run is **3 acts**. Each act has its own seeded 6-row map: row 1 battles, rows 2–4 mixed, row 5
+  a rest row (shop / forge / shrine / rest), row 6 that act's boss. Every run fights all three
+  bosses (Lich King, Stone Golem, Hydra) in a seeded order; beating the act-3 boss wins the run.
+- Each act has its own arena look: **I. The Crypt** (stone), **II. The Frozen Marsh** (blue-green,
+  mist), **III. The Storm Spire** (violet, lightning flashes). A short title card opens each act.
+- Difficulty follows depth d = (act − 1) × 6 + row (1..18): wave tables and HP scaling stretch over
+  the whole run; featured enemies unlock by depth; act 2 adds top/bottom entries, act 3 more.
+- Rows 2–4 have 2–4 nodes each with at least one battle; treasure and rest from row 2; at least one
+  elite on row 3 or 4. Edges link each node to 1–2 nodes in nearby columns of the next row
+  without crossing; every node is reachable and every non-boss node has a way out.
 - Node kinds:
 
 | Node | What happens |
@@ -193,15 +212,14 @@ Several copies of the same keystone in one spell count once.
 | **Battle** | Prepare (rune editor) → fight. Win: gold, pick 2 of 5 runes, +2 max mana. |
 | **Elite** | Harder fight (an Elite Knight joins, HP +10%). Win: more gold, rarer runes, +3 max mana, and pick 1 of 3 blessings. |
 | **Shop** | Spend gold: 5 runes for sale, a forge service, and removing a curse. Purchases persist. |
-| **Forge** | Upgrade one owned rune for free. |
+| **Forge** | Upgrade one owned rune for free, **or** fuse two runes (see Fusion). |
 | **Shrine** | Pick 1 of 2 blessings, **or** take a Dark Bargain: a random curse plus a random rare rune and gold. |
 | **Event (?)** | A short choice with a tradeoff (see Events). |
 | **Treasure** | Pick 1 of 3 rare runes; at least one is a keystone. |
 | **Rest** | +10 max ward HP, **or** forge one rune for free. |
 | **Boss** | Final fight. Winning ends the run in victory. |
 
-- Map weights add event 10, treasure 4 and rest 6 (treasure and rest from row 3; the row-9 rest
-  row may hold shop, forge, shrine or rest).
+- Map weights: battle 50, elite 12, shop 13, forge 12, shrine 13, event 10, treasure 4, rest 6.
 - Battle and elite nodes preview their featured enemy, hazard and elite trait; the boss node shows
   the run's boss. Each battle node features one enemy type unlocked by its row (Shield Bearer and
   Swarmer from row 2, Splitter from row 3, Armored and Cleanser from row 4) mixed into its waves.
@@ -220,6 +238,7 @@ Seeded per node. Each offers its choice or Leave.
 - **Wandering Merchant:** trade a rune for a random rune one rarity higher.
 - **Gambler's Dice:** pay 25 gold; 50% chance to win 60.
 - **Fountain:** +15 max ward HP, or remove a random curse.
+- **Alchemist:** fuse two runes using any recipe you can make, for 20 gold.
 
 ### Daily seed and run summary
 - **Daily run** on the title screen: the seed comes from today's local date, so everyone gets the
@@ -227,6 +246,44 @@ Seeded per node. Each offers its choice or Leave.
 - The end screen (victory or defeat) shows the final spell graph, damage dealt per rune, reactions
   by type, and run totals (battles, kills, best hit, gold, boons, seed or daily date).
 - **[default]** Prices: common 30, uncommon 50, rare 80, forge 40, remove curse 50 (all × price boons).
+
+### Socket bonuses
+Some runes carry a **socket bonus**: extra modifiers that switch on when any of their inputs is fed
+by a matching output (an exact color, a specific rune, or any complex color). A branching rune's
+bonus adds augments for its descendants; a terminal's bonus modifies its own shot. The editor
+shows each bonus and whether it is active.
+
+### Fusion
+Recipes in `src/data/fusions.ts` turn two owned runes into one unique **fused** rune (rarity
+`fused`, never offered as a reward). At a forge you may fuse instead of upgrading: one copy of each
+ingredient is consumed (removed from the spell and loadouts if placed). The forge shows the recipe
+book: a recipe's result stays "???" until you own both ingredients. The Alchemist event also fuses.
+
+### Loadouts
+Up to 3 saved spell layouts, switched on the prepare screen before a fight. Switching stores the
+current spell in its slot and loads the other (an empty slot starts as the Source alone). Selling,
+transmuting or fusing a rune removes it from every loadout.
+
+### Share codes
+A spell can be copied as a short code (`CS1.` + URL-safe base64 of its runes, forged flags and
+links). Importing a code previews it in the practice range; **Use** applies it when you own enough
+copies of each rune (forged ones must be forged) and it fits your mana.
+
+### Run history and telemetry
+- **History** (title screen): the last 30 runs: date, school, ability, seed or daily date, result
+  and how far you got, boss reached, best hit, kills, top rune, and the final spell's share code.
+- **Telemetry** (local only): per run, rewards offered and taken, shop purchases, final spell,
+  damage share per rune, reactions, and where the run ended. Kept in localStorage (last 200 runs);
+  the `?dev` panel can export it as JSON or clear it. Never sent anywhere.
+
+### Settings
+A settings screen (title screen and the ⚙ in the top bar): master, sound-effect and music volume,
+screen-shake strength, damage-number size, and **colorblind mode**, which draws a shape on every
+socket and color pip (R ▲, G ●, B ■, Y ◆, P ✚, T ⬟, W ✱). Stored in `src/settings.ts`.
+
+### Music
+Looping tracks for the title, map/editor, battles and bosses, crossfading on screen changes,
+following the music volume and mute.
 
 ### Forge
 A forged rune is the same rune with a **+**: `upgradeDef` in `src/spell/`.
@@ -244,7 +301,8 @@ editor's validation and combat always agree), battle multipliers (enemy HP / spe
 reaction damage, ward regen), max ward HP, gold, shop prices, runes offered and mana gained.
 
 ### Run start: schools
-Each run starts by picking a school, which sets the starter kit, starting spell and a blessing:
+Each run starts by picking a school (starter kit, starting spell and a blessing), then an active
+ability:
 
 | School | Kit | Blessing |
 |---|---|---|

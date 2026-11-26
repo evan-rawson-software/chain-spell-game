@@ -6,6 +6,7 @@ import { floorDef } from '../floors';
 import { ELITE_BLESSINGS, REROLL_COST, REROLL_SALT, REWARD_OFFER, REWARD_PICKS, goldReward, nodeSeed, rollBoons, rollRewards } from '../rewards';
 import { createRng } from '../rng';
 import { addBoon, addGold, applyReward, manaGain, spendGold } from '../state';
+import { logOffer } from '../telemetry';
 import { boonCard, button, el, fmtTime, rowLabel, runeCard } from '../ui';
 
 export function rewardScreen(app: App, fresh = true): void {
@@ -16,12 +17,14 @@ export function rewardScreen(app: App, fresh = true): void {
   app.show((s) => {
     s.classList.add('rn-center');
     const totals = app.totals();
-    const f = floorDef(node.row, node.kind, node.id, app.run.seed);
+    const f = floorDef(node.row, node.kind, node.id, app.run.seed, app.run.act);
+    // An act boss (acts 1 and 2) pays out like an elite.
+    const payKind = node.kind === 'boss' ? 'elite' : node.kind;
     const rewards = rollRewards(f, createRng(nodeSeed(app.run.seed, node.id, app.ns.rerolled ? REROLL_SALT : 0)), REWARD_OFFER + totals.rewardOffer);
     const rerollCost = Math.round(REROLL_COST * totals.priceMul);
-    const gold = Math.round(goldReward(node.kind, node.row) * totals.goldMul);
+    const gold = Math.round(goldReward(payKind, f.floor) * totals.goldMul);
     const box = el('div', 'rn-rewardbox', undefined, s);
-    el('h2', 'rn-h2', `${rowLabel(node.row)} cleared`, box);
+    el('h2', 'rn-h2', node.kind === 'boss' ? `Act ${app.run.act} boss defeated` : `${rowLabel(node.row, app.run.act)} cleared`, box);
     if (app.lastResult) {
       const r = app.lastResult;
       const line = el('div', 'rn-battlesum', undefined, box);
@@ -32,7 +35,7 @@ export function rewardScreen(app: App, fresh = true): void {
     }
     const gains = el('div', 'rn-battlesum', undefined, box);
     el('div', 'rn-managain gold', `+${gold} gold`, gains);
-    const gain = manaGain(node.kind, totals);
+    const gain = manaGain(payKind, totals);
     el('div', 'rn-managain', `Max mana ${app.run.maxMana} → ${app.run.maxMana + gain} (+${gain})`, gains);
     el('p', 'rn-sub', `Choose up to ${REWARD_PICKS} runes`, box);
     const cards = el('div', 'rn-cards', undefined, box);
@@ -79,9 +82,10 @@ export function rewardScreen(app: App, fresh = true): void {
     const confirm = button('', 'rn-btn primary big', () => {
       let run = app.run;
       for (const i of selected) { const r = rewards[i] as Reward | undefined; if (r) run = applyReward(run, r); }
-      run = addGold(run, goldReward(node.kind, node.row), totals);
+      run = addGold(run, goldReward(payKind, f.floor), totals);
+      logOffer(app.run, { source: node.kind, row: node.row, offered: rewards.map((r) => r.defId), taken: selected.map((i) => rewards[i]?.defId).filter(Boolean) });
       app.setRun(run);
-      if (node.kind === 'elite') { app.save('blessing'); app.goto.blessing(); } else app.leaveNode();
+      if (node.kind === 'elite' || node.kind === 'boss') { app.save('blessing'); app.goto.blessing(); } else app.leaveNode();
     }, actions, 'rewardTake');
     refresh();
   });
@@ -96,7 +100,7 @@ export function blessingScreen(app: App): void {
     s.classList.add('rn-center');
     const offers = rollBoons('blessing', app.run.boons, createRng(nodeSeed(app.run.seed, node.id, 1)), ELITE_BLESSINGS);
     const box = el('div', 'rn-rewardbox', undefined, s);
-    el('h2', 'rn-h2', 'Elite defeated', box);
+    el('h2', 'rn-h2', node.kind === 'boss' ? 'Boss defeated' : 'Elite defeated', box);
     el('p', 'rn-sub', offers.length ? 'Choose a blessing' : 'No blessings left to offer', box);
     const cards = el('div', 'rn-cards', undefined, box);
     let pick: string | null = null;

@@ -86,8 +86,8 @@ describe('hazards', () => {
     expect(hazardSlowMul('rain')).toBe(1);
   });
   it('fog hides distant enemies unless hit within 0.6 s', () => {
-    expect(fogVisible(600, 99)).toBe(true);
-    expect(fogVisible(651, 99)).toBe(false);
+    expect(fogVisible(500, 99)).toBe(true);
+    expect(fogVisible(571, 99)).toBe(false);
     expect(fogVisible(800, 0.3)).toBe(true);
     expect(fogVisible(800, 0.6)).toBe(false);
     expect(fogAlpha(800, 0)).toBe(1);

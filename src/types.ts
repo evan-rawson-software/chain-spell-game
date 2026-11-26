@@ -14,6 +14,11 @@ export type Color = 'R' | 'G' | 'B' | 'Y' | 'P' | 'T' | 'W';
 /** Bitmask form of a color: R=1, G=2, B=4. Complex colors are ORs of primaries. */
 export const COLOR_BITS: Record<Color, number> = { R: 1, G: 2, B: 4, Y: 3, P: 5, T: 6, W: 7 };
 
+/** Colorblind mode: a shape per color, drawn on sockets and pips (DESIGN.md, Settings). */
+export const COLOR_SHAPE: Record<Color, string> = {
+  R: '▲', G: '●', B: '■', Y: '◆', P: '✚', T: '⬟', W: '✱',
+};
+
 export const COLOR_HEX: Record<Color, string> = {
   R: '#e5484d', G: '#46a758', B: '#3e83f7', Y: '#f5c518', P: '#9b5de5', T: '#14b8a6', W: '#f1f1f1',
 };
@@ -70,7 +75,28 @@ export interface Modifier {
 
 // ---------------------------------------------------------------- Runes
 
-export type Rarity = 'starter' | 'common' | 'uncommon' | 'rare';
+/** 'fused' runes only come from fusion recipes (src/data/fusions.ts), never from reward pools. */
+export type Rarity = 'starter' | 'common' | 'uncommon' | 'rare' | 'fused';
+
+/**
+ * Socket bonus (DESIGN.md, Socket bonuses): extra modifiers that switch on when any of the rune's
+ * inputs is fed by a matching output. Exactly one condition is set.
+ */
+export interface SocketBonus {
+  /** fed by an output of exactly this color */
+  color?: Color;
+  /** fed by an output of a rune with this defId */
+  rune?: string;
+  /** fed by any complex-color output (Y, P, T, W) */
+  complex?: boolean;
+  /** Branching runes: extra augments for descendants. Terminals: extra mods on its own shot. */
+  mods: Modifier[];
+  /** Short player-facing text, e.g. "Fed by White: +50% damage". */
+  text: string;
+}
+
+/** Player's active ability, picked at run start (DESIGN.md, Active ability). */
+export type AbilityId = 'overcast' | 'ward_pulse' | 'detonate';
 
 /**
  * Keystones change a combat rule instead of adding numbers (DESIGN.md, Keystones).
@@ -120,6 +146,7 @@ export interface RuneDef {
   globals?: Modifier[];
   /** Terminal runes only: the rule this keystone turns on. */
   keystone?: KeystoneId;
+  socketBonus?: SocketBonus;
 }
 
 export type RuneCatalog = Record<string, RuneDef>;
@@ -200,6 +227,8 @@ export type ReactionKind =
 
 export interface SpawnGroup {
   kind: EnemyKind;
+  /** edge the group enters from (default 'right'); 'top'/'bottom' enter across the upper/lower edge */
+  from?: 'right' | 'top' | 'bottom';
   count: number;
   /** seconds after wave start for the first spawn */
   at: number;
@@ -218,6 +247,8 @@ export interface FloorDef {
   /** enemy HP multiplier for scaling */
   hpScale: number;
   hazard?: HazardId;
+  /** 1..3; sets the arena look (default 1) */
+  act?: number;
   /** applies to elite_knight enemies on this floor */
   eliteTrait?: EliteTraitId;
 }
@@ -318,6 +349,9 @@ export interface RunState {
   wardMaxHp: number;
   seed: number;
   school: string;
+  ability: AbilityId;
+  /** 1..3; `map` is the current act's map and `floor` the row within it */
+  act: number;
   map: RunMap;
   /** id of the last visited map node; null before the first pick */
   at: string | null;
@@ -327,6 +361,9 @@ export interface RunState {
   /** 'YYYY-MM-DD' for a daily-seed run, else null */
   daily: string | null;
   stats: RunStats;
+  /** Saved spell layouts (DESIGN.md, Loadouts); `graph` is the active one, kept in sync with slot `loadout`. */
+  loadouts: (SpellGraph | null)[];
+  loadout: number;
 }
 
 /** Accumulated over the run for the end summary. */

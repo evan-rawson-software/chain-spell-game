@@ -130,6 +130,41 @@ function modsOf(def: RuneDef | undefined, which: 'augments' | 'globals'): Modifi
   return (def && def[which]) || [];
 }
 
+// ---------------------------------------------------------------- socket bonuses
+
+/** Is a condition-matching output feeding any input of `uid`? */
+function bonusActiveIn(graph: SpellGraph, catalog: RuneCatalog, a: Analysis, uid: string): boolean {
+  const i = a.nodeIndex.get(uid);
+  if (i === undefined) return false;
+  const bonus = defOf(catalog, graph.nodes[i])?.socketBonus;
+  if (!bonus) return false;
+  for (const l of a.links) {
+    if (l.toUid !== uid) continue;
+    const fromNode = graph.nodes[a.nodeIndex.get(l.from.uid)!];
+    const color = defOf(catalog, fromNode)?.outputs[l.from.output];
+    if (color === undefined) continue;
+    if (bonus.color !== undefined && color === bonus.color) return true;
+    if (bonus.rune !== undefined && fromNode.defId === bonus.rune) return true;
+    if (bonus.complex && (color === 'Y' || color === 'P' || color === 'T' || color === 'W')) return true;
+  }
+  return false;
+}
+
+/** True when the socket bonus of the placed rune `uid` is active in this graph. */
+export function socketBonusActive(graph: SpellGraph, catalog: RuneCatalog, uid: string): boolean {
+  return bonusActiveIn(graph, catalog, analyze(graph), uid);
+}
+
+/** A branching rune's augments plus its active socket-bonus mods. */
+function augmentsOfNode(graph: SpellGraph, catalog: RuneCatalog, a: Analysis, n: RuneInstance): Modifier[] {
+  const def = defOf(catalog, n);
+  const base = modsOf(def, 'augments');
+  if (def && def.outputs.length > 0 && def.socketBonus && bonusActiveIn(graph, catalog, a, n.uid)) {
+    return [...base, ...def.socketBonus.mods];
+  }
+  return base;
+}
+
 // ---------------------------------------------------------------- forging
 
 const r3 = (n: number): number => Math.round(n * 1000) / 1000;
@@ -174,6 +209,7 @@ Forged: +50% effect, -1 mana.`,
   }
   if (def.augments) out.augments = def.augments.map(upgradeMod);
   if (def.globals) out.globals = def.globals.map(upgradeMod);
+  if (def.socketBonus) out.socketBonus = { ...def.socketBonus, mods: def.socketBonus.mods.map(upgradeMod) };
   upgraded.set(def, out);
   return out;
 }
@@ -339,9 +375,10 @@ export function removeRune(graph: SpellGraph, uid: string): SpellGraph {
 
 function spellWideMods(graph: SpellGraph, catalog: RuneCatalog, stat: 'castTime' | 'manaCost'): Modifier[] {
   const out: Modifier[] = [];
+  const a = analyze(graph);
   for (const n of graph.nodes) {
     const def = defOf(catalog, n);
-    for (const m of modsOf(def, 'augments')) if (m.stat === stat) out.push(m);
+    for (const m of augmentsOfNode(graph, catalog, a, n)) if (m.stat === stat) out.push(m);
     for (const m of modsOf(def, 'globals')) if (m.stat === stat) out.push(m);
   }
   return out;
@@ -367,8 +404,7 @@ function computeMana(graph: SpellGraph, catalog: RuneCatalog, a: Analysis): numb
     if (!def) continue;
     let mana = def.mana + globalFlat;
     for (const anc of ancestorsOf(n.uid, a.parents)) {
-      const ad = defOf(catalog, graph.nodes[a.nodeIndex.get(anc)!]);
-      for (const m of modsOf(ad, 'augments')) if (m.stat === 'manaCost' && m.op === 'flat') mana += m.value;
+      for (const m of augmentsOfNode(graph, catalog, a, graph.nodes[a.nodeIndex.get(anc)!])) if (m.stat === 'manaCost' && m.op === 'flat') mana += m.value;
     }
     total += Math.max(0, mana);
   }
@@ -525,8 +561,10 @@ export function compileSpell(graph: SpellGraph, catalog: RuneCatalog, extraGloba
     // ancestors in graph order for determinism
     const anc = ancestorsOf(uid, a.parents);
     for (const n of graph.nodes) {
-      if (anc.has(n.uid)) mods.push(...modsOf(defOf(catalog, n), 'augments'));
+      if (anc.has(n.uid)) mods.push(...augmentsOfNode(graph, catalog, a, n));
     }
+    // a terminal's own socket bonus modifies its own shot
+    if (def.socketBonus && bonusActiveIn(graph, catalog, a, uid)) mods.push(...def.socketBonus.mods);
     mods.push(...globals);
     shots.push(resolveShot(uid, def, mods));
   }
@@ -551,6 +589,93 @@ function defAt(graph: SpellGraph, catalog: RuneCatalog, a: Analysis, uid: string
   return i === undefined ? undefined : defOf(catalog, graph.nodes[i]);
 }
 
+// ---------------------------------------------------------------- share codes
+
+const CODE_PREFIX = 'CS1.';
+/** Must equal ROOT_UID / SOURCE_ID in src/data/runes.ts (asserted in tests); spell stays independent of data. */
+const ROOT_UID_LITERAL = 'root';
+const SOURCE_DEF_ID = 'source';
+const MAX_CODE_LENGTH = 20000;
+const MAX_CODE_NODES = 200;
+
+function toBase64Url(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function fromBase64Url(b64: string): string | null {
+  if (!/^[A-Za-z0-9_-]*$/.test(b64) || b64.length % 4 === 1) return null;
+  try {
+    const std = b64.replace(/-/g, '+').replace(/_/g, '/');
+    const bin = atob(std + '==='.slice((std.length + 3) % 4));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+/** Share code: 'CS1.' + base64url of [[defId, plus][], [fromIdx, output, toIdx, toInput][]] (index 0 = root). */
+export function encodeSpell(graph: SpellGraph): string {
+  const index = new Map<string, number>([[graph.rootUid, 0]]);
+  const nodes: [string, number][] = [];
+  for (const n of graph.nodes) {
+    if (index.has(n.uid)) continue;
+    index.set(n.uid, nodes.length + 1);
+    nodes.push([n.defId, n.plus ? 1 : 0]);
+  }
+  const links: number[][] = [];
+  for (const l of graph.links) {
+    const f = index.get(l.from.uid);
+    const t = index.get(l.toUid);
+    if (f === undefined || t === undefined) continue;
+    links.push([f, l.from.output, t, l.toInput]);
+  }
+  return CODE_PREFIX + toBase64Url(JSON.stringify([nodes, links]));
+}
+
+const isUint = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0;
+
+/** Parse a share code; null when malformed, unknown runes, bad indices or a structurally invalid graph. */
+export function decodeSpell(code: string, catalog: RuneCatalog): SpellGraph | null {
+  if (typeof code !== 'string') return null;
+  const trimmed = code.trim();
+  if (!trimmed.startsWith(CODE_PREFIX) || trimmed.length > MAX_CODE_LENGTH) return null;
+  const json = fromBase64Url(trimmed.slice(CODE_PREFIX.length));
+  if (json === null) return null;
+  let data: unknown;
+  try { data = JSON.parse(json); } catch { return null; }
+  if (!Array.isArray(data) || data.length !== 2 || !Array.isArray(data[0]) || !Array.isArray(data[1])) return null;
+  const [rawNodes, rawLinks] = data as [unknown[], unknown[]];
+  if (rawNodes.length > MAX_CODE_NODES || rawLinks.length > MAX_CODE_NODES * 4) return null;
+  if (!catalog[SOURCE_DEF_ID]) return null;
+
+  const nodes: SpellGraph['nodes'] = [{ uid: ROOT_UID_LITERAL, defId: SOURCE_DEF_ID }];
+  for (let i = 0; i < rawNodes.length; i++) {
+    const e = rawNodes[i];
+    if (!Array.isArray(e) || e.length !== 2 || typeof e[0] !== 'string' || (e[1] !== 0 && e[1] !== 1)) return null;
+    const def = catalog[e[0]];
+    if (!def || def.inputs.length === 0) return null; // unknown, or a second Source
+    nodes.push(e[1] === 1 ? { uid: `s${i}`, defId: e[0], plus: true } : { uid: `s${i}`, defId: e[0] });
+  }
+  const uidAt = (idx: number): string => (idx === 0 ? ROOT_UID_LITERAL : `s${idx - 1}`);
+  const links: SpellGraph['links'] = [];
+  for (const e of rawLinks) {
+    if (!Array.isArray(e) || e.length !== 4 || !e.every(isUint)) return null;
+    const [f, out, t, inp] = e as number[];
+    if (f > rawNodes.length || t > rawNodes.length || t === 0) return null;
+    links.push({ from: { uid: uidAt(f), output: out }, toUid: uidAt(t), toInput: inp });
+  }
+  const graph: SpellGraph = { rootUid: ROOT_UID_LITERAL, nodes, links };
+  const v = validateSpell(graph, catalog, Infinity);
+  if (v.errors.some((e) => !e.startsWith('Mana over budget'))) return null;
+  return graph;
+}
+
 export const engine: SpellEngine = {
   colorsCombine, openOutputs, findPlacements, placeRune, removeRune, validateSpell, compileSpell, upgradeDef, defOf,
+  socketBonusActive, encodeSpell, decodeSpell,
 };
