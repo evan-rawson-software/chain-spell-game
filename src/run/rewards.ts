@@ -1,5 +1,6 @@
+import { BOONS } from '../data/boons';
 import { CATALOG, SOURCE_ID } from '../data/runes';
-import type { FloorDef, Reward, Rarity, RuneCatalog } from '../types';
+import type { BoonDef, FloorDef, Reward, Rarity, RuneCatalog, MapNodeKind } from '../types';
 import type { Rng } from './rng';
 
 type DropRarity = Exclude<Rarity, 'starter'>;
@@ -12,14 +13,16 @@ export function rarityWeights(floor: FloorDef): Record<DropRarity, number> {
   return w;
 }
 
-/** Runes offered per floor, and how many the player may take. */
+/** Runes offered per battle (before boons), and how many the player may take. */
 export const REWARD_OFFER = 5;
 export const REWARD_PICKS = 2;
+/** Blessings offered after an elite (pick 1). */
+export const ELITE_BLESSINGS = 3;
 
-export function rollRewards(floor: FloorDef, rng: Rng, catalog: RuneCatalog = CATALOG): Reward[] {
+export function rollRewards(floor: FloorDef, rng: Rng, count: number = REWARD_OFFER, catalog: RuneCatalog = CATALOG): Reward[] {
   const pool = Object.values(catalog).filter((d) => d.rarity !== 'starter' && d.id !== SOURCE_ID);
   const weights = rarityWeights(floor);
-  const runeCount = REWARD_OFFER;
+  const runeCount = Math.max(1, count);
 
   const out: Reward[] = [];
   const remaining = [...pool];
@@ -31,4 +34,28 @@ export function rollRewards(floor: FloorDef, rng: Rng, catalog: RuneCatalog = CA
     out.push({ kind: 'rune', defId: def.id });
   }
   return out;
+}
+
+/** Gold earned for clearing a battle or elite on `row` (before the gold multiplier). */
+export function goldReward(kind: MapNodeKind, row: number): number {
+  if (kind === 'elite') return 40 + 4 * row;
+  if (kind === 'battle') return 15 + 3 * row;
+  return 0;
+}
+
+/** Up to `count` distinct boons of `kind` that the player doesn't hold, in random order. */
+export function rollBoons(
+  kind: BoonDef['kind'], held: readonly string[], rng: Rng, count: number, boons: Record<string, BoonDef> = BOONS,
+): BoonDef[] {
+  const pool = Object.values(boons).filter((b) => b.kind === kind && !held.includes(b.id));
+  const out: BoonDef[] = [];
+  while (out.length < count && pool.length > 0) out.push(pool.splice(rng.int(pool.length), 1)[0]);
+  return out;
+}
+
+/** Stable per-node seed so offers survive reloads: hash of the run seed, node id and a salt. */
+export function nodeSeed(seed: number, id: string, salt = 0): number {
+  let h = (seed ^ Math.imul(salt + 1, 0x9e3779b1)) >>> 0;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0;
+  return h;
 }

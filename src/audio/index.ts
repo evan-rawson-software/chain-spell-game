@@ -14,7 +14,11 @@ export type SfxName =
   | 'castCharged' | 'castFire' | 'shotFire' | 'shotFrost' | 'shotNature' | 'shotLightning'
   | 'shotArcane' | 'shotStorm' | 'shotPure' | 'hitFire' | 'hitFrost' | 'hitNature'
   | 'hitLightning' | 'hitArcane' | 'hitStorm' | 'hitPure' | 'explosion' | 'freeze'
-  | 'enemyDie' | 'bossDie' | 'enemyShoot' | 'wardHit' | 'waveStart';
+  | 'enemyDie' | 'bossDie' | 'enemyShoot' | 'wardHit' | 'waveStart'
+  // reactions & big moments
+  | 'reaction' | 'shatter' | 'multiKill' | 'bigHit'
+  // map, shop, forge, shrine
+  | 'mapStep' | 'coin' | 'buy' | 'forge' | 'blessing' | 'curse';
 
 export interface SfxOptions {
   /** 0..1, multiplied with the master volume. */
@@ -79,6 +83,18 @@ const DEFS: Record<SfxName, Def> = {
   enemyShoot: { files: ['enemy-shoot.wav'], vol: 0.4, gap: 80, voices: 4 },
   wardHit: { files: ['ward-hit.ogg'], vol: 0.8, gap: 90, voices: 3 },
   waveStart: { files: ['wave-start.ogg'], vol: 0.8, gap: 300, voices: 1, var: 0 },
+
+  // These reuse existing clips at other pitches/volumes (pass `pitch` for variety).
+  reaction: { files: ['hit-arcane.ogg'], vol: 0.7, gap: 50, voices: 6, var: 0.1 },
+  shatter: { files: ['freeze.wav'], vol: 0.8, gap: 60, voices: 4, var: 0.08 },
+  multiKill: { files: ['reward-take.ogg'], vol: 0.6, gap: 250, voices: 1, var: 0 },
+  bigHit: { files: ['explosion.wav'], vol: 0.8, gap: 120, voices: 2, var: 0.05 },
+  mapStep: { files: ['rune-place.ogg'], vol: 0.7 },
+  coin: { files: ['reward-select.ogg'], vol: 0.6, gap: 40, var: 0.15 },
+  buy: { files: ['reward-take.ogg'], vol: 0.8 },
+  forge: { files: ['explosion.wav'], vol: 0.5, var: 0 },
+  blessing: { files: ['floor-clear.ogg'], vol: 0.7, var: 0 },
+  curse: { files: ['run-defeat.ogg'], vol: 0.5, var: 0 },
 };
 
 const MUTE_KEY = 'chain-spell-muted';

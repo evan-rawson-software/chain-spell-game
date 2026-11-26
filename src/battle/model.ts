@@ -1,4 +1,4 @@
-import type { Element, EnemyKind, ResolvedShot, StatusKind } from '../types';
+import type { BattleMods, Element, EnemyKind, ResolvedShot, StatusKind } from '../types';
 
 export const W = 1000;
 export const H = 600;
@@ -52,6 +52,8 @@ export interface Enemy {
   dotAcc: number;
   dotTimer: number;
   phase: number;
+  /** reaction kind -> world time before which it can't trigger on this enemy again */
+  reactAt: Record<string, number>;
 }
 
 export interface PProj {
@@ -76,7 +78,7 @@ export interface Particle {
 
 export interface Ring { x: number; y: number; r: number; maxR: number; t: number; max: number; color: string }
 export interface Arc { pts: { x: number; y: number }[]; t: number; max: number; color: string }
-export interface FloatText { x: number; y: number; text: string; color: string; t: number; max: number; size: number }
+export interface FloatText { x: number; y: number; text: string; color: string; t: number; max: number; size: number; glow?: boolean }
 
 export interface World {
   time: number;
@@ -93,7 +95,30 @@ export interface World {
   kills: number;
   damageTaken: number;
   nextId: number;
+  mods: BattleMods;
+  /** elemental reactions triggered */
+  reactions: number;
+  /** largest single hit dealt */
+  bestHit: number;
+  // --- juice (see juice.ts) ---
+  /** screen shake 0..1 */
+  trauma: number;
+  /** requested hit-stop seconds, consumed by the game loop */
+  hitStopReq: number;
+  /** real seconds of slow motion requested, consumed by the game loop */
+  slowmoReq: number;
+  /** white flash strength requested 0..1, consumed by the game loop */
+  flashReq: number;
+  killTimes: number[];
+  multiShown: number;
+  combo: { n: number; last: number };
+  callout: { text: string; color: string; t: number; max: number } | null;
+  lastReactSfx: number;
 }
+
+export const NEUTRAL_MODS: BattleMods = {
+  enemyHpMul: 1, enemySpeedMul: 1, enemyDamageMul: 1, reactionDamageMul: 1, wardRegen: 0,
+};
 
 export const ELEMENT_COLOR: Record<Element, string> = {
   fire: '#ff7a2f', frost: '#7fd8ff', nature: '#6ee06e', lightning: '#ffe14d',
@@ -127,10 +152,13 @@ export const ENEMY_CFG: Record<EnemyKind, EnemyCfg> = {
   },
 };
 
-export function newWorld(wardMax: number): World {
+export function newWorld(wardMax: number, mods: BattleMods = NEUTRAL_MODS): World {
   return {
     time: 0, enemies: [], pprojs: [], eprojs: [], fx: [], rings: [], arcs: [], texts: [],
     wardHp: wardMax, wardMax, wardFlash: 0, kills: 0, damageTaken: 0, nextId: 1,
+    mods: { ...NEUTRAL_MODS, ...mods }, reactions: 0, bestHit: 0,
+    trauma: 0, hitStopReq: 0, slowmoReq: 0, flashReq: 0, killTimes: [], multiShown: 0,
+    combo: { n: 0, last: -99 }, callout: null, lastReactSfx: -99,
   };
 }
 
@@ -142,8 +170,8 @@ export function burst(w: World, x: number, y: number, color: string, n: number, 
   }
 }
 
-export function floatText(w: World, x: number, y: number, text: string, color: string, size = 14, max = 0.9): void {
-  w.texts.push({ x: x + (Math.random() - 0.5) * 10, y, text, color, t: 0, max, size });
+export function floatText(w: World, x: number, y: number, text: string, color: string, size = 14, max = 0.9, glow = false): void {
+  w.texts.push({ x: x + (Math.random() - 0.5) * 10, y, text, color, t: 0, max, size, glow });
 }
 
 export function updateFx(w: World, dt: number): void {
@@ -159,6 +187,7 @@ export function updateFx(w: World, dt: number): void {
   for (const a of w.arcs) a.t += dt;
   w.arcs = w.arcs.filter(a => a.t < a.max);
   for (const t of w.texts) { t.t += dt; t.y -= 28 * dt; }
+  if (w.callout) { w.callout.t += dt; if (w.callout.t >= w.callout.max) w.callout = null; }
   w.texts = w.texts.filter(t => t.t < t.max);
   if (w.fx.length > 1200) w.fx.splice(0, w.fx.length - 1200);
 }

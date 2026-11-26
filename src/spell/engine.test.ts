@@ -3,6 +3,7 @@ import type { Color, RuneCatalog, RuneDef, ShotBase, SpellGraph } from '../types
 import type { Placement } from '../contracts';
 import {
   colorsCombine, compileSpell, engine, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
+  upgradeDef, defOf,
 } from './index';
 
 const shot = (over: Partial<ShotBase> = {}): ShotBase => ({
@@ -556,5 +557,115 @@ describe('compileSpell', () => {
     }
     const _c: Color = 'R';
     expect(_c).toBe('R');
+  });
+});
+
+describe('forging', () => {
+  const F: RuneCatalog = {
+    source: CAT.source,
+    shotRune: def('shotRune', {
+      inputs: ['R'], mana: 2, rarity: 'common',
+      shot: shot({ damage: 40, statuses: [{ kind: 'burn', potency: 6, duration: 3 }, { kind: 'freeze', potency: 0, duration: 1 }] }),
+    }),
+    cheap: def('cheap', { inputs: ['R'], mana: 0, shot: shot() }),
+    aug: def('aug', {
+      inputs: ['R'], outputs: ['R'],
+      augments: [
+        { stat: 'damage', op: 'increased', value: 0.4 },
+        { stat: 'damage', op: 'more', value: -0.25 },
+        { stat: 'count', op: 'flat', value: 2 },
+        { stat: 'castTime', op: 'increased', value: -0.2 },
+        { stat: 'castTime', op: 'flat', value: 0.4 },
+      ],
+    }),
+    sigil: def('sigil', { inputs: ['R'], globals: [{ stat: 'damage', op: 'increased', value: 0.2, element: 'fire' }] }),
+  };
+
+  it('upgrades shot, mana and modifiers without mutating', () => {
+    const snap = JSON.stringify(F.shotRune);
+    const u = upgradeDef(F.shotRune);
+    expect(JSON.stringify(F.shotRune)).toBe(snap);
+    expect(u.name).toBe('shotRune+');
+    expect(u.mana).toBe(1);
+    expect(u.shot!.damage).toBe(60);
+    expect(u.shot!.statuses[0].potency).toBe(7.5);
+    expect(u.shot!.statuses[1].potency).toBe(0);
+    expect(u.inputs).toEqual(F.shotRune.inputs);
+    expect(u.outputs).toEqual(F.shotRune.outputs);
+    expect(u.castTime).toBe(F.shotRune.castTime);
+    expect(u.description).toContain('Forged');
+  });
+  it('mana never goes below 0', () => {
+    expect(upgradeDef(F.cheap).mana).toBe(0);
+  });
+  it('scales beneficial mods, keeps detrimental, flat count gets +1', () => {
+    const m = upgradeDef(F.aug).augments!;
+    expect(m[0].value).toBeCloseTo(0.6);
+    expect(m[1].value).toBe(-0.25);
+    expect(m[2].value).toBe(3);
+    expect(m[3].value).toBeCloseTo(-0.3);
+    expect(m[4].value).toBe(0.4);
+    expect(upgradeDef(F.sigil).globals![0]).toMatchObject({ value: 0.3, element: 'fire' });
+  });
+  it('leaves the Source alone', () => {
+    const src = def('source', { rarity: 'starter', outputs: ['R'], mana: 0 });
+    expect(upgradeDef(src)).toBe(src);
+  });
+  it('defOf resolves plus instances', () => {
+    expect(defOf(F, { uid: 'a', defId: 'shotRune' })).toBe(F.shotRune);
+    expect(defOf(F, { uid: 'a', defId: 'shotRune', plus: true })!.name).toBe('shotRune+');
+    expect(defOf(F, { uid: 'a', defId: 'nope' })).toBeUndefined();
+  });
+  it('a plus instance changes compile damage and mana', () => {
+    const mk = (plus: boolean): SpellGraph => ({
+      rootUid: 'root',
+      nodes: [{ uid: 'root', defId: 'source' }, { uid: 's', defId: 'shotRune', plus }],
+      links: [{ from: { uid: 'root', output: 0 }, toUid: 's', toInput: 0 }],
+    });
+    expect(compileSpell(mk(false), F).shots[0].damage).toBe(40);
+    expect(compileSpell(mk(true), F).shots[0].damage).toBe(60);
+    expect(validateSpell(mk(false), F, 9).manaUsed).toBe(2);
+    expect(validateSpell(mk(true), F, 9).manaUsed).toBe(1);
+  });
+  it('forged augment affects descendants', () => {
+    const mk = (plus: boolean): SpellGraph => ({
+      rootUid: 'root',
+      nodes: [{ uid: 'root', defId: 'source' }, { uid: 'a', defId: 'aug', plus }, { uid: 's', defId: 'cheap' }],
+      links: [
+        { from: { uid: 'root', output: 0 }, toUid: 'a', toInput: 0 },
+        { from: { uid: 'a', output: 0 }, toUid: 's', toInput: 0 },
+      ],
+    });
+    expect(compileSpell(mk(true), F).shots[0].count).toBe(4);
+    expect(compileSpell(mk(false), F).shots[0].count).toBe(3);
+  });
+});
+
+describe('extraGlobals', () => {
+  const g: SpellGraph = {
+    rootUid: 'root',
+    nodes: [{ uid: 'root', defId: 'source' }, { uid: 'f', defId: 'fire' }, { uid: 'i', defId: 'frost' }],
+    links: [
+      { from: { uid: 'root', output: 0 }, toUid: 'f', toInput: 0 },
+      { from: { uid: 'root', output: 1 }, toUid: 'i', toInput: 0 },
+    ],
+  };
+  it('applies to every shot', () => {
+    const base = compileSpell(g, CAT);
+    const plan = compileSpell(g, CAT, [{ stat: 'damage', op: 'increased', value: 0.5 }]);
+    expect(plan.shots[0].damage).toBeCloseTo(base.shots[0].damage * 1.5);
+    expect(plan.shots[1].damage).toBeCloseTo(base.shots[1].damage * 1.5);
+  });
+  it('respects element filters', () => {
+    const base = compileSpell(g, CAT);
+    const plan = compileSpell(g, CAT, [{ stat: 'damage', op: 'increased', value: 0.2, element: 'fire' }]);
+    expect(plan.shots[0].damage).toBeCloseTo(base.shots[0].damage * 1.2);
+    expect(plan.shots[1].damage).toBe(base.shots[1].damage);
+  });
+  it('ignores castTime and manaCost mods', () => {
+    const base = compileSpell(g, CAT);
+    const plan = compileSpell(g, CAT, [{ stat: 'castTime', op: 'more', value: 5 }, { stat: 'manaCost', op: 'flat', value: -9 }]);
+    expect(plan.castTime).toBe(base.castTime);
+    expect(plan.manaUsed).toBe(base.manaUsed);
   });
 });

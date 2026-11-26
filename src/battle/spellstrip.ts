@@ -1,5 +1,6 @@
 import type { CastPlan, Color, RuneCatalog, SpellGraph } from '../types';
 import { COLOR_HEX } from '../types';
+import { defOf as resolveDef } from '../spell';
 import { ELEMENT_COLOR } from './model';
 
 export interface StripState {
@@ -61,7 +62,7 @@ export function createSpellStrip(graph: SpellGraph, catalog: RuneCatalog, _plan:
 
   const defOf = (uid: string) => {
     const n = graph.nodes.find((x) => x.uid === uid);
-    return n ? catalog[n.defId] : undefined;
+    return n ? resolveDef(catalog, n) : undefined;
   };
 
   let boxes: NodeBox[] = [];

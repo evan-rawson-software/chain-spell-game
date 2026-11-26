@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Chain Spell is a roguelite spell-builder prototype. The player wires runes into a spell graph, then
-aims that spell against real-time enemy waves across 10 linear floors, earning new runes between
-floors. **DESIGN.md is the game spec**; read it before changing game rules.
+aims that spell against real-time enemy waves across a 10-row branching map (battles, elites,
+shops, forges, shrines, boss), earning runes, gold, forge upgrades and blessings/curses. **DESIGN.md is the game spec**; read it before changing game rules.
 
 Live build: https://evan-rawson-software.github.io/chain-spell-game/
 
@@ -28,11 +28,11 @@ TypeScript + Vite, no framework. Canvas 2D for battles, plain DOM + inline SVG f
 | `src/types.ts` | Shared data types: colors, runes, modifiers, spell graph, cast plan, floors, run state |
 | `src/contracts.ts` | Public API each module exports (`SpellEngine`, `MountEditor`, `MountBattle`) |
 | `src/spell/` | Pure spell engine: placement, color merging, validation, compiling a graph into a `CastPlan` |
-| `src/data/runes.ts` | Rune catalog (`CATALOG`), starter kit and graph, `runeTooltip` |
+| `src/data/` | Rune catalog (`runes.ts`), schools (`schools.ts`), blessings/curses (`boons.ts`) |
 | `src/editor/` | Rune editor UI: graph by level, placement previews, inventory, live spell stats |
-| `src/battle/` | Real-time arena: enemies, projectiles, statuses, waves, HUD; `dev.ts` has demo data |
+| `src/battle/` | Real-time arena: enemies, projectiles, statuses, reactions (`reactions.ts`), juice, HUD; `dev.ts` has demo data |
 | `src/audio/` | Sound effects: `sfx(name)`, mute; clips in `public/sfx/` |
-| `src/run/` | Run state, floors, seeded rewards, localStorage save, screen flow (`startApp`) |
+| `src/run/` | Run state, map, floors, seeded rewards, shop/forge/shrine, localStorage save, screen flow (`startApp`) |
 | `src/main.ts` | Entry point: `startApp(#app)` |
 
 Data flow: `run` owns `RunState`. The editor edits `graph` through the spell engine, then
@@ -60,9 +60,13 @@ input it contains (P → R or B, W → any); see `outputFeeds` in `src/spell/ind
 - Stacking: `(base + flat) * (1 + sum(increased)) * product(1 + more)`.
 - Terminals fire depth-first; siblings fire in `graph.nodes` order (the editor's top-to-bottom
   order within a level, which the player can drag to change), `stagger` seconds apart.
-- Mana is a static build budget that grows automatically per cleared floor (`manaGain` in
-  `src/run/state.ts`); cast time is the in-combat cost. Rewards are runes only (pick 2 of 5). Ward HP resets
+- Mana is a static build budget that grows per cleared map node (`manaGain` in
+  `src/run/state.ts`); cast time is the in-combat cost. Battles reward gold and runes (pick 2 of 5);
+  elites and shrines give blessings; shops sell runes, forging and curse removal. Ward HP resets
   each floor.
+- Reactions: a hit checks the enemy's statuses before applying its own (`src/battle/reactions.ts`).
+- Forged runes (`RuneInstance.plus`) resolve through `defOf`/`upgradeDef`; never read
+  `catalog[inst.defId]` directly for an instance.
 - No meta-progression in the MVP.
 
 ## Working conventions

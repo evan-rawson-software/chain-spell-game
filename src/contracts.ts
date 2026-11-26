@@ -3,17 +3,37 @@
  * entry points. Do not edit from inside a module; ask the orchestrator.
  *
  *   src/spell/index.ts   -> SpellEngine functions (named exports)
- *   src/data/runes.ts    -> `export const CATALOG: RuneCatalog`, `export const SOURCE_ID`,
+ *   src/data/runes.ts    -> `export const CATALOG: RuneCatalog`, `export const SOURCE_ID`, `ROOT_UID`,
  *                           `export const STARTER_KIT: string[]` (defIds, excluding Source),
- *                           `export function starterGraph(owned: RuneInstance[]): SpellGraph`
+ *                           `export function starterGraph(owned: RuneInstance[], schoolId?: string): SpellGraph`
+ *                           (uses the school's kit; default = STARTER_KIT layout),
+ *                           `runeTooltip(def)` (works on upgraded defs too)
+ *   src/data/schools.ts  -> `export const SCHOOLS: SchoolDef[]`, `export const DEFAULT_SCHOOL: string`
+ *   src/data/boons.ts    -> `export const BOONS: Record<string, BoonDef>`,
+ *                           `export const NEUTRAL_MODS: BattleMods`,
+ *                           `export function combineBoons(ids: string[]): BoonTotals`
  *   src/editor/index.ts  -> `export const mountEditor: MountEditor`
  *   src/battle/index.ts  -> `export const mountBattle: MountBattle`
  *   src/run/index.ts     -> run flow + screens; `export function startApp(root: HTMLElement): void`
  *   src/audio/index.ts   -> `sfx(name, opts?)`, `setMuted`, `isMuted` (any module may play sounds)
  */
 import type {
-  BattleResult, CastPlan, Color, FloorDef, OutputRef, RuneCatalog, RuneDef, RuneInstance, SpellGraph,
+  BattleMods, BattleResult, CastPlan, Color, FloorDef, Modifier, OutputRef, RuneCatalog, RuneDef, RuneInstance,
+  SpellGraph,
 } from './types';
+
+// ---------------------------------------------------------------- data/boons.ts
+
+/** Sum of every held boon's effects. */
+export interface BoonTotals {
+  spell: Modifier[];
+  battle: BattleMods;
+  wardHp: number;
+  goldMul: number;
+  priceMul: number;
+  rewardOffer: number;
+  manaGain: number;
+}
 
 // ---------------------------------------------------------------- spell/
 
@@ -50,8 +70,12 @@ export interface SpellEngine {
   removeRune(graph: SpellGraph, uid: string): SpellGraph;
   /** Structural + mana checks. */
   validateSpell(graph: SpellGraph, catalog: RuneCatalog, maxMana: number): ValidationResult;
-  /** Resolve every terminal into a shot. Assumes a valid graph. */
-  compileSpell(graph: SpellGraph, catalog: RuneCatalog): CastPlan;
+  /** Resolve every terminal into a shot. Assumes a valid graph. `extraGlobals` (blessings/curses) apply to every shot like terminal globals. */
+  compileSpell(graph: SpellGraph, catalog: RuneCatalog, extraGlobals?: Modifier[]): CastPlan;
+  /** The forged ("+") version of a rune. Pure; see DESIGN.md, Forge. */
+  upgradeDef(def: RuneDef): RuneDef;
+  /** The def an instance resolves to (upgraded when `inst.plus`). Undefined if unknown. */
+  defOf(catalog: RuneCatalog, inst: RuneInstance): RuneDef | undefined;
 }
 
 // ---------------------------------------------------------------- editor/
@@ -64,6 +88,8 @@ export interface EditorOptions {
   root: RuneInstance;
   graph: SpellGraph;
   maxMana: number;
+  /** Blessing/curse spell mods, so the live stats match combat. */
+  extraGlobals?: Modifier[];
   /** Called with the new graph after every edit. */
   onChange(graph: SpellGraph): void;
 }
@@ -82,7 +108,10 @@ export interface BattleOptions {
   graph: SpellGraph;
   catalog: RuneCatalog;
   floor: FloorDef;
+  /** Effective max ward HP (base + boons). */
   wardMaxHp: number;
+  /** Blessing/curse battle mods; defaults to neutral. */
+  mods?: BattleMods;
   onEnd(result: BattleResult): void;
 }
 

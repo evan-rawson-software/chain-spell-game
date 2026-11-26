@@ -1,6 +1,7 @@
 import type { BattleHandle, BattleOptions } from '../contracts';
 import type { EnemyKind } from '../types';
 import { spawnEnemy, sweepDead, updateEnemies, updateEnemyProjectiles } from './enemies';
+import { addTrauma, comboState, isLargeCast } from './juice';
 import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, newWorld, updateFx } from './model';
 import { fireShot, updatePlayerProjectiles } from './projectiles';
 import { render, type HudState } from './render';
@@ -18,7 +19,14 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
   container.appendChild(canvas);
   const ctx = canvas.getContext('2d')!;
 
-  const world = newWorld(wardMaxHp);
+  const world = newWorld(wardMaxHp, opts.mods);
+  const largeCast = isLargeCast(plan.shots);
+  const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const shakeMul = reducedMotion ? 0.3 : 1;
+  // juice state (real-time seconds)
+  let stopT = 0, stopBudget = 0.12, slowT = 0, flashT = 0;
+  const FLASH_DUR = 0.45, SLOWMO_SCALE = 0.3;
+  let shakeX = 0, shakeY = 0;
   const castTime = Math.max(0.05, plan.castTime);
   const stagger = Math.max(0, plan.stagger);
   const hasShots = plan.shots.length > 0;
@@ -150,9 +158,16 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       endT -= dt;
       if (endT <= 0 && !ended) {
         ended = true;
-        onEnd({ won, kills: world.kills, damageTaken: Math.round(world.damageTaken), durationSec: elapsed });
+        onEnd({
+          won, kills: world.kills, damageTaken: Math.round(world.damageTaken), durationSec: elapsed,
+          reactions: world.reactions, bestHit: Math.round(world.bestHit),
+        });
       }
       return;
+    }
+
+    if (world.mods.wardRegen > 0 && world.wardHp > 0) {
+      world.wardHp = Math.min(world.wardMax, world.wardHp + world.mods.wardRegen * dt);
     }
 
     // casting
@@ -166,6 +181,7 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
         lastCast = world.time;
         casts.push({ i: 0, t: 0 });
         sfx('castFire');
+        if (largeCast) addTrauma(world, 0.2);
       }
     }
     for (const c of casts) {
@@ -217,10 +233,12 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     ctx.save();
     // clip vertically to the world; sideways overflow stays visible so entering enemies show
     ctx.beginPath(); ctx.rect(-offX / scale, 0, cssW / scale, H); ctx.clip();
+    ctx.translate(shakeX, shakeY);
     const total = floor.waves.length;
     const kindName = floor.kind === 'elite' ? 'Elite' : floor.kind === 'boss' ? 'Boss' : '';
     const bk = bannerT / BANNER_DUR;
     const bAlpha = bannerT <= 0 ? 0 : Math.max(0, Math.min(1, (1 - bk) / 0.2, bk / 0.3));
+    const co = world.callout;
     const aim = (mouseDown || wantFire > 0) ? mouse : (aimPoint() ?? lastAim);
     const hud: HudState = {
       floor, waveIdx, waveTotal: total,
@@ -235,9 +253,18 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
       ui: Math.max(1, Math.min(1.7, 1 / scale)),
       hurt: Math.min(1, hurtT / 0.5),
       offX: -offX / scale, viewW: cssW / scale, pxScale: dpr * scale, aimX: aim.x, aimY: aim.y,
+      bigCast: largeCast, combo: comboState(world),
+      callout: co ? { text: co.text, color: co.color, k: co.t / co.max } : null,
     };
     render(ctx, world, hud);
     ctx.restore();
+
+    // white flash (elite / boss death)
+    if (flashT > 0) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = `rgba(255,255,255,${(0.6 * flashT) / FLASH_DUR})`;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     // spell strip in screen space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -255,9 +282,30 @@ export function createGame(container: HTMLElement, opts: BattleOptions): BattleH
     if (destroyed) return;
     raf = requestAnimationFrame(frame);
     if (paused) { last = 0; return; }
-    const dt = last ? Math.min(0.05, (now - last) / 1000) : 0;
+    const realDt = last ? Math.min(0.05, (now - last) / 1000) : 0;
     last = now;
-    update(dt);
+
+    // juice runs on real time: shake decay, hit-stop (rate-limited), slow motion, flash
+    if (world.hitStopReq > 0) {
+      const grant = Math.min(world.hitStopReq, stopBudget);
+      stopBudget -= grant;
+      stopT = Math.min(0.12, stopT + grant);
+      world.hitStopReq = 0;
+    }
+    stopBudget = Math.min(0.12, stopBudget + realDt * 0.24);
+    if (world.slowmoReq > 0) { slowT = Math.max(slowT, world.slowmoReq); world.slowmoReq = 0; }
+    if (world.flashReq > 0) { flashT = FLASH_DUR * world.flashReq; world.flashReq = 0; }
+    world.trauma = Math.max(0, world.trauma - realDt * 1.3);
+    flashT = Math.max(0, flashT - realDt);
+    const mag = world.trauma * world.trauma * 12 * shakeMul;
+    shakeX = mag > 0.01 ? (Math.random() * 2 - 1) * mag : 0;
+    shakeY = mag > 0.01 ? (Math.random() * 2 - 1) * mag : 0;
+
+    let dt = realDt;
+    if (stopT > 0) { stopT -= realDt; dt = 0; }
+    else if (slowT > 0) dt = realDt * SLOWMO_SCALE;
+    slowT = Math.max(0, slowT - realDt);
+    if (dt > 0) update(dt);
     draw();
     if (ended) { cancelAnimationFrame(raf); raf = 0; }
   }

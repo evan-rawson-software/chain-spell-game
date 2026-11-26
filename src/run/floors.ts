@@ -1,4 +1,4 @@
-import type { EnemyKind, FloorDef, SpawnGroup, WaveDef } from '../types';
+import type { EnemyKind, FloorDef, MapNodeKind, SpawnGroup, WaveDef } from '../types';
 
 export const FLOOR_COUNT = 10;
 
@@ -57,13 +57,18 @@ const WAVES: Record<number, WaveDef[]> = {
   ],
 };
 
-export function floorDef(n: number): FloorDef {
-  const floor = Math.max(1, Math.min(FLOOR_COUNT, Math.round(n)));
-  const kind: FloorDef['kind'] = floor === FLOOR_COUNT ? 'boss' : floor === 5 ? 'elite' : 'normal';
-  return {
-    floor,
-    kind,
-    waves: WAVES[floor].map((w) => ({ groups: w.groups.map((x) => ({ ...x })) })),
-    hpScale: 1 + 0.18 * (floor - 1),
-  };
+/**
+ * The floor for map row `row` (1..10). The node kind decides the encounter:
+ * battle = that row's waves; elite = same plus an Elite Knight in the middle wave and +10% HP; boss = row-10 waves.
+ */
+export function floorDef(row: number, nodeKind: MapNodeKind = 'battle'): FloorDef {
+  const floor = Math.max(1, Math.min(FLOOR_COUNT, Math.round(row)));
+  const kind: FloorDef['kind'] = nodeKind === 'boss' ? 'boss' : nodeKind === 'elite' ? 'elite' : 'normal';
+  const waves: WaveDef[] = WAVES[floor].map((w) => ({ groups: w.groups.map((x) => ({ ...x })) }));
+  let hpScale = 1 + 0.18 * (floor - 1);
+  if (kind === 'elite') {
+    waves[Math.floor(waves.length / 2)].groups.push(g('elite_knight', 1, 2, 1));
+    hpScale *= 1.1;
+  }
+  return { floor, kind, waves, hpScale };
 }

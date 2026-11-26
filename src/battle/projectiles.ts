@@ -1,7 +1,11 @@
 import type { Element, ResolvedShot } from '../types';
 import type { SfxName } from '../audio';
 import { damageEnemy } from './enemies';
-import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, burst, type Enemy, type PProj, type World } from './model';
+import { ELEMENT_COLOR, H, MUZZLE_X, MUZZLE_Y, W, burst, floatText, type Enemy, type PProj, type World } from './model';
+import { addTrauma } from './juice';
+import {
+  consumeStatuses, markTriggered, planReactions, reactionMult, readyPlans, type ReactionPlan,
+} from './reactions';
 import { applyStatus } from './status';
 import { sfx } from '../audio';
 
@@ -47,9 +51,82 @@ function nearest(w: World, x: number, y: number, exclude: Set<number>, maxDist =
 }
 
 function applyHit(w: World, e: Enemy, shot: ResolvedShot, dmg: number): void {
-  damageEnemy(w, e, dmg, shot.element);
+  // reactions look at the statuses BEFORE this hit applies its own
+  const plans = e.dead ? [] : readyPlans(planReactions(e.st, shot.element), e.reactAt, w.time);
+  const rdm = w.mods.reactionDamageMul;
+  damageEnemy(w, e, dmg * reactionMult(plans, rdm), shot.element, false, { reaction: plans.length > 0 });
+  if (plans.length) {
+    markTriggered(plans, e.reactAt, w.time);
+    consumeStatuses(e.st, plans.flatMap(p => p.consume));
+    plans.forEach((p, i) => runReaction(w, e, p, dmg, rdm, i));
+  }
   if (!e.dead) for (const s of shot.statuses) applyStatus(e, s);
   burst(w, e.x, e.y, ELEMENT_COLOR[shot.element], 7, 130, 0.35, 2.2);
+}
+
+/** Reaction damage goes straight through damageEnemy, which never starts another reaction. */
+function reactionHit(w: World, o: Enemy, amount: number, element: Element): void {
+  if (amount > 0) damageEnemy(w, o, amount, element, false, { reaction: true });
+}
+
+/** Feedback and area effects of one reaction on `e`. `hitDmg` is the triggering hit before multipliers. */
+function runReaction(w: World, e: Enemy, p: ReactionPlan, hitDmg: number, rdm: number, idx: number): void {
+  w.reactions++;
+  floatText(w, e.x, e.y - e.r - 24 - idx * 16, p.name, p.color, 17, 1.1, true);
+  addTrauma(w, 0.25);
+  if (p.kind === 'shatter') {
+    sfx('shatter');
+    burst(w, e.x, e.y, '#dff6ff', 18, 220, 0.5, 2.6);
+  } else if (w.time - w.lastReactSfx > 0.06) {
+    sfx('reaction', { pitch: 0.85 + Math.random() * 0.4 });
+  }
+  w.lastReactSfx = w.time;
+
+  const x = e.x, y = e.y, ex = p.extra;
+  if (!ex) return;
+  const near = (r: number, self: boolean): Enemy[] =>
+    w.enemies.filter(o => !o.dead && (self || o !== e) && Math.hypot(o.x - x, o.y - y) <= r + o.r);
+  switch (ex.type) {
+    case 'cloud':
+      w.rings.push({ x, y, r: 10, maxR: ex.radius, t: 0, max: 0.6, color: p.color });
+      burst(w, x, y, p.color, 22, ex.radius * 1.4, 0.7, 3);
+      for (const o of near(ex.radius, true)) {
+        applyStatus(o, { kind: 'wet', potency: ex.wet.p, duration: ex.wet.t });
+        applyStatus(o, { kind: 'slow', potency: ex.slow.p, duration: ex.slow.t });
+      }
+      break;
+    case 'combust': {
+      w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.4, color: p.color });
+      burst(w, x, y, p.color, 20, ex.radius * 2, 0.5, 2.8);
+      const dmg = ex.damage * rdm;
+      for (const o of near(ex.radius, true)) reactionHit(w, o, dmg, 'fire');
+      break;
+    }
+    case 'spread':
+      w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.5, color: p.color });
+      for (const o of near(ex.radius, false)) {
+        applyStatus(o, { kind: 'burn', potency: ex.burn.dps, duration: ex.burn.t });
+        burst(w, o.x, o.y, p.color, 6, 90, 0.4, 2);
+      }
+      break;
+    case 'arcs': {
+      const dmg = hitDmg * ex.frac * rdm;
+      for (const o of near(ex.radius, false)) {
+        if (!o.st.wet) continue;
+        w.arcs.push({ pts: lightningPoints(x, y, o.x, o.y), t: 0, max: 0.3, color: ELEMENT_COLOR.lightning });
+        reactionHit(w, o, dmg, 'lightning');
+        consumeStatuses(o.st, ['wet']);
+      }
+      break;
+    }
+    case 'blast': {
+      w.rings.push({ x, y, r: 8, maxR: ex.radius, t: 0, max: 0.35, color: p.color });
+      burst(w, x, y, p.color, 16, ex.radius * 2.2, 0.45, 2.6);
+      const dmg = hitDmg * ex.frac * rdm;
+      for (const o of near(ex.radius, false)) reactionHit(w, o, dmg, 'lightning');
+      break;
+    }
+  }
 }
 
 function lightningPoints(x1: number, y1: number, x2: number, y2: number): { x: number; y: number }[] {
@@ -74,6 +151,7 @@ function onHit(w: World, p: PProj, e: Enemy): void {
 
   if (shot.aoeRadius > 0) {
     sfx('explosion');
+    addTrauma(w, 0.1);
     const color = ELEMENT_COLOR[shot.element];
     w.rings.push({ x: p.x, y: p.y, r: 4, maxR: shot.aoeRadius, t: 0, max: 0.35, color });
     burst(w, p.x, p.y, color, 14, shot.aoeRadius * 2, 0.45, 2.5);

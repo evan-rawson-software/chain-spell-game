@@ -204,3 +204,11 @@
 @media (max-width: 1000px) {
   .re-hint-item:nth-child(3), .re-hint-item:nth-child(4) { display: none; }
 }
+
+/* Forged ("+") runes */
+.re-card.forged, .re-inv-card.forged {
+  border-color: #e0b84c;
+  box-shadow: 0 0 10px rgba(224, 184, 76, 0.35);
+}
+.re-card.forged .re-name, .re-inv-card.forged .n { color: #f3d27a; }
+.re-node.forged:hover, .re-inv-card.forged:hover { border-color: #f3d27a; }

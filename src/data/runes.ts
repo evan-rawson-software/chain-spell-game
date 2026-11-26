@@ -334,23 +334,35 @@ export const STARTER_KIT: string[] = ['amplify', 'fireball', 'frost_bolt'];
 
 // ---------------------------------------------------------------- starter graph
 
-export function starterGraph(owned: RuneInstance[]): SpellGraph {
-  const pick = (defId: string): RuneInstance => {
+/** [defId, parent ('root' or a defId), parent output index]. Node order = firing order within a level. */
+type LayoutEntry = [string, string, number];
+
+const LAYOUTS: Record<string, LayoutEntry[]> = {
+  elementalist: [['amplify', 'root', 0], ['frost_bolt', 'root', 1], ['fireball', 'amplify', 0]],
+  pyromancer: [['amplify', 'root', 0], ['fireball', 'amplify', 0], ['ember_dart', 'amplify', 1]],
+  cryomancer: [
+    ['frost_focus', 'root', 1], ['frost_bolt', 'frost_focus', 0], ['ice_shard', 'frost_focus', 1], ['ember_dart', 'root', 0],
+  ],
+  druid: [
+    ['bloom', 'root', 2], ['thorn_shot', 'bloom', 0], ['poison_cloud', 'bloom', 1], ['ember_dart', 'root', 0],
+  ],
+};
+
+export function starterGraph(owned: RuneInstance[], schoolId = 'elementalist'): SpellGraph {
+  const layout = LAYOUTS[schoolId] ?? LAYOUTS.elementalist;
+  const insts = new Map<string, RuneInstance>();
+  for (const [defId] of layout) {
     const inst = owned.find((r) => r.defId === defId);
     if (!inst) throw new Error(`starterGraph: owned runes missing "${defId}"`);
-    return inst;
-  };
-  const amplify = pick('amplify');
-  const frost = pick('frost_bolt');
-  const fireball = pick('fireball');
+    insts.set(defId, inst);
+  }
+  const uidOf = (defId: string): string => (defId === 'root' ? ROOT_UID : insts.get(defId)!.uid);
   return {
     rootUid: ROOT_UID,
-    nodes: [{ uid: ROOT_UID, defId: SOURCE_ID }, amplify, frost, fireball],
-    links: [
-      { from: { uid: ROOT_UID, output: 0 }, toUid: amplify.uid, toInput: 0 },
-      { from: { uid: ROOT_UID, output: 1 }, toUid: frost.uid, toInput: 0 },
-      { from: { uid: amplify.uid, output: 0 }, toUid: fireball.uid, toInput: 0 },
-    ],
+    nodes: [{ uid: ROOT_UID, defId: SOURCE_ID }, ...layout.map(([defId]) => insts.get(defId)!)],
+    links: layout.map(([defId, parent, output]) => ({
+      from: { uid: uidOf(parent), output }, toUid: insts.get(defId)!.uid, toInput: 0,
+    })),
   };
 }
 

@@ -1,0 +1,43 @@
+import type { BoonTotals } from '../contracts';
+import type { BattleResult, BoonDef, MapNode, RunState } from '../types';
+
+export type Cleanup = () => void;
+
+/** Shared controller state handed to every screen. Screens import only this type, never each other. */
+export interface App {
+  /** Current run; replace through setRun. */
+  run: RunState;
+  /** Map node ids visited so far, in order (includes the node being played). */
+  visited: string[];
+  /** Shop stock indexes already bought at the current shop. */
+  sold: number[];
+  lastResult: BattleResult | null;
+  boons: Record<string, BoonDef>;
+  /** Combined effects of the held blessings/curses. */
+  totals(): BoonTotals;
+  /** The node being played (or last cleared when on the map). */
+  node(): MapNode | undefined;
+  setRun(run: RunState): void;
+  show(build: (screen: HTMLElement) => Cleanup | void): void;
+  /** Persist with the given phase (visited/sold included). */
+  save(phase: import('./state').Phase): void;
+  /** Apply the mana gain for the current node, advance the floor, and return to the map. */
+  leaveNode(): void;
+  goto: {
+    title(): void;
+    school(): void;
+    map(): void;
+    prepare(): void;
+    battle(): void;
+    reward(): void;
+    blessing(): void;
+    shop(): void;
+    forge(): void;
+    shrine(): void;
+    /** Resume a loaded save in its phase. */
+    resume(phase: import('./state').Phase): void;
+    newRun(schoolId: string): void;
+    end(won: boolean): void;
+    pickNode(node: MapNode): void;
+  };
+}

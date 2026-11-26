@@ -130,6 +130,60 @@ function modsOf(def: RuneDef | undefined, which: 'augments' | 'globals'): Modifi
   return (def && def[which]) || [];
 }
 
+// ---------------------------------------------------------------- forging
+
+const r3 = (n: number): number => Math.round(n * 1000) / 1000;
+
+function upgradeMod(m: Modifier): Modifier {
+  if (m.stat === 'castTime' || m.stat === 'manaCost') {
+    if (m.value >= 0) return { ...m };
+    // flat mana is integral: one more point off instead of x1.5
+    if (m.stat === 'manaCost' && m.op === 'flat') return { ...m, value: m.value - 1 };
+    return { ...m, value: r3(m.value * 1.5) };
+  }
+  if (m.value <= 0) return { ...m };
+  if (m.op === 'flat' && (m.stat === 'count' || m.stat === 'pierce' || m.stat === 'chain')) {
+    return { ...m, value: m.value + 1 };
+  }
+  if (m.stat === 'spreadDeg') return { ...m };
+  return { ...m, value: r3(m.value * 1.5) };
+}
+
+const upgraded = new WeakMap<RuneDef, RuneDef>();
+
+/** The forged ("+") version of a rune. Pure; see DESIGN.md, Forge. */
+export function upgradeDef(def: RuneDef): RuneDef {
+  if (def.rarity === 'starter' && def.inputs.length === 0) return def;
+  const cached = upgraded.get(def);
+  if (cached) return cached;
+  const out: RuneDef = {
+    ...def,
+    name: def.name + '+',
+    mana: Math.max(0, def.mana - 1),
+    inputs: [...def.inputs],
+    outputs: [...def.outputs],
+    description: `${def.description}
+Forged: +50% effect, -1 mana.`,
+  };
+  if (def.shot) {
+    out.shot = {
+      ...def.shot,
+      damage: Math.round(def.shot.damage * 1.5),
+      statuses: def.shot.statuses.map((s) => (s.kind === 'freeze' ? { ...s } : { ...s, potency: Math.round(s.potency * 1.25 * 100) / 100 })),
+    };
+  }
+  if (def.augments) out.augments = def.augments.map(upgradeMod);
+  if (def.globals) out.globals = def.globals.map(upgradeMod);
+  upgraded.set(def, out);
+  return out;
+}
+
+/** The def an instance resolves to (upgraded when `inst.plus`). */
+export function defOf(catalog: RuneCatalog, inst: RuneInstance): RuneDef | undefined {
+  const d = catalog[inst.defId];
+  return d && inst.plus ? upgradeDef(d) : d;
+}
+
 // ---------------------------------------------------------------- open outputs & placement
 
 export function openOutputs(graph: SpellGraph, catalog: RuneCatalog): OpenOutput[] {
@@ -137,7 +191,7 @@ export function openOutputs(graph: SpellGraph, catalog: RuneCatalog): OpenOutput
   const used = new Set(graph.links.map((l) => `${l.from.uid}#${l.from.output}`));
   const result: OpenOutput[] = [];
   for (const n of graph.nodes) {
-    const def = catalog[n.defId];
+    const def = defOf(catalog, n);
     const level = a.levels.get(n.uid);
     if (!def || level === undefined) continue;
     def.outputs.forEach((color, output) => {
@@ -228,7 +282,7 @@ export function findPlacements(graph: SpellGraph, catalog: RuneCatalog, def: Run
 export function placeRune(
   graph: SpellGraph, catalog: RuneCatalog, inst: RuneInstance, placement: Placement,
 ): SpellGraph {
-  const def = catalog[inst.defId];
+  const def = defOf(catalog, inst);
   if (!def) throw new Error(`Unknown rune def "${inst.defId}"`);
   if (graph.nodes.some((n) => n.uid === inst.uid)) throw new Error(`Duplicate uid "${inst.uid}"`);
   if (placement.inputs.length !== def.inputs.length || def.inputs.length === 0) {
@@ -259,7 +313,7 @@ export function placeRune(
   });
   return {
     rootUid: graph.rootUid,
-    nodes: [...graph.nodes, { uid: inst.uid, defId: inst.defId }],
+    nodes: [...graph.nodes, inst.plus ? { uid: inst.uid, defId: inst.defId, plus: true } : { uid: inst.uid, defId: inst.defId }],
     links: [...graph.links, ...newLinks],
   };
 }
@@ -286,7 +340,7 @@ export function removeRune(graph: SpellGraph, uid: string): SpellGraph {
 function spellWideMods(graph: SpellGraph, catalog: RuneCatalog, stat: 'castTime' | 'manaCost'): Modifier[] {
   const out: Modifier[] = [];
   for (const n of graph.nodes) {
-    const def = catalog[n.defId];
+    const def = defOf(catalog, n);
     for (const m of modsOf(def, 'augments')) if (m.stat === stat) out.push(m);
     for (const m of modsOf(def, 'globals')) if (m.stat === stat) out.push(m);
   }
@@ -295,13 +349,13 @@ function spellWideMods(graph: SpellGraph, catalog: RuneCatalog, stat: 'castTime'
 
 function computeCastTime(graph: SpellGraph, catalog: RuneCatalog): number {
   let base = 0;
-  for (const n of graph.nodes) base += catalog[n.defId]?.castTime ?? 0;
+  for (const n of graph.nodes) base += defOf(catalog, n)?.castTime ?? 0;
   return Math.max(MIN_CAST_TIME, stackValue(base, spellWideMods(graph, catalog, 'castTime')));
 }
 
 function computeMana(graph: SpellGraph, catalog: RuneCatalog, a: Analysis): number {
   const globalFlat = graph.nodes
-    .flatMap((n) => modsOf(catalog[n.defId], 'globals'))
+    .flatMap((n) => modsOf(defOf(catalog, n), 'globals'))
     .filter((m) => m.stat === 'manaCost' && m.op === 'flat')
     .reduce((s, m) => s + m.value, 0);
   const seen = new Set<string>();
@@ -309,11 +363,11 @@ function computeMana(graph: SpellGraph, catalog: RuneCatalog, a: Analysis): numb
   for (const n of graph.nodes) {
     if (seen.has(n.uid)) continue;
     seen.add(n.uid);
-    const def = catalog[n.defId];
+    const def = defOf(catalog, n);
     if (!def) continue;
     let mana = def.mana + globalFlat;
     for (const anc of ancestorsOf(n.uid, a.parents)) {
-      const ad = catalog[graph.nodes[a.nodeIndex.get(anc)!].defId];
+      const ad = defOf(catalog, graph.nodes[a.nodeIndex.get(anc)!]);
       for (const m of modsOf(ad, 'augments')) if (m.stat === 'manaCost' && m.op === 'flat') mana += m.value;
     }
     total += Math.max(0, mana);
@@ -333,20 +387,20 @@ export function validateSpell(graph: SpellGraph, catalog: RuneCatalog, maxMana: 
   for (const n of graph.nodes) {
     if (uidSeen.has(n.uid)) errors.push(`Duplicate rune uid "${n.uid}"`);
     uidSeen.add(n.uid);
-    if (!catalog[n.defId]) errors.push(`Unknown rune "${n.defId}" (uid ${n.uid})`);
+    if (!defOf(catalog, n)) errors.push(`Unknown rune "${n.defId}" (uid ${n.uid})`);
   }
 
-  const defOf = (uid: string): RuneDef | undefined => {
+  const defByUid = (uid: string): RuneDef | undefined => {
     const i = a.nodeIndex.get(uid);
-    return i === undefined ? undefined : catalog[graph.nodes[i].defId];
+    return i === undefined ? undefined : defOf(catalog, graph.nodes[i]);
   };
 
   // link sanity
   const goodLinks: Link[] = [];
   const outputUse = new Map<string, number>();
   for (const l of graph.links) {
-    const fromDef = defOf(l.from.uid);
-    const toDef = defOf(l.toUid);
+    const fromDef = defByUid(l.from.uid);
+    const toDef = defByUid(l.toUid);
     let ok = true;
     if (!a.nodeIndex.has(l.from.uid)) { errors.push(`Link references missing source rune "${l.from.uid}"`); ok = false; }
     if (!a.nodeIndex.has(l.toUid)) { errors.push(`Link references missing target rune "${l.toUid}"`); ok = false; }
@@ -372,7 +426,7 @@ export function validateSpell(graph: SpellGraph, catalog: RuneCatalog, maxMana: 
 
   // per-node input checks
   for (const n of graph.nodes) {
-    const def = catalog[n.defId];
+    const def = defOf(catalog, n);
     if (!def) continue;
     const isRoot = n.uid === graph.rootUid;
     def.inputs.forEach((color, i) => {
@@ -381,7 +435,7 @@ export function validateSpell(graph: SpellGraph, catalog: RuneCatalog, maxMana: 
         if (!isRoot) errors.push(`Rune "${def.name}" (${n.uid}) input ${i} (${color}) is not connected`);
         return;
       }
-      const colors = feeding.map((l) => defOf(l.from.uid)!.outputs[l.from.output]);
+      const colors = feeding.map((l) => defByUid(l.from.uid)!.outputs[l.from.output]);
       if (!inputSatisfied(color, colors)) {
         errors.push(
           `Color mismatch: rune "${def.name}" (${n.uid}) input ${i} needs ${color} but got ${colors.join('+')}`,
@@ -441,9 +495,13 @@ function resolveShot(uid: string, def: RuneDef, mods: Modifier[]): ResolvedShot 
   };
 }
 
-export function compileSpell(graph: SpellGraph, catalog: RuneCatalog): CastPlan {
+export function compileSpell(graph: SpellGraph, catalog: RuneCatalog, extraGlobals: Modifier[] = []): CastPlan {
   const a = analyze(graph);
-  const globals: Modifier[] = graph.nodes.flatMap((n) => modsOf(catalog[n.defId], 'globals'));
+  const globals: Modifier[] = [
+    ...graph.nodes.flatMap((n) => modsOf(defOf(catalog, n), 'globals')),
+    // boons only carry shot stats; cast time / mana never come from them
+    ...extraGlobals.filter((m) => m.stat !== 'castTime' && m.stat !== 'manaCost'),
+  ];
 
   // DFS order from root
   const order: string[] = [];
@@ -467,7 +525,7 @@ export function compileSpell(graph: SpellGraph, catalog: RuneCatalog): CastPlan 
     // ancestors in graph order for determinism
     const anc = ancestorsOf(uid, a.parents);
     for (const n of graph.nodes) {
-      if (anc.has(n.uid)) mods.push(...modsOf(catalog[n.defId], 'augments'));
+      if (anc.has(n.uid)) mods.push(...modsOf(defOf(catalog, n), 'augments'));
     }
     mods.push(...globals);
     shots.push(resolveShot(uid, def, mods));
@@ -483,9 +541,9 @@ export function compileSpell(graph: SpellGraph, catalog: RuneCatalog): CastPlan 
 
 function defAt(graph: SpellGraph, catalog: RuneCatalog, a: Analysis, uid: string): RuneDef | undefined {
   const i = a.nodeIndex.get(uid);
-  return i === undefined ? undefined : catalog[graph.nodes[i].defId];
+  return i === undefined ? undefined : defOf(catalog, graph.nodes[i]);
 }
 
 export const engine: SpellEngine = {
-  colorsCombine, openOutputs, findPlacements, placeRune, removeRune, validateSpell, compileSpell,
+  colorsCombine, openOutputs, findPlacements, placeRune, removeRune, validateSpell, compileSpell, upgradeDef, defOf,
 };

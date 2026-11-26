@@ -3,7 +3,7 @@ import { COLOR_HEX } from '../types';
 import type { Color, Element, Modifier, OutputRef, RuneDef, RuneInstance, SpellGraph } from '../types';
 import type { EditorHandle, EditorOptions, MountEditor, Placement } from '../contracts';
 import {
-  compileSpell, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
+  compileSpell, defOf as resolveDef, findPlacements, openOutputs, placeRune, removeRune, validateSpell,
 } from '../spell';
 import { runeTooltip } from '../data/runes';
 import { sfx } from '../audio';
@@ -111,7 +111,8 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   tooltip.style.display = 'none';
   container.appendChild(tooltip);
 
-  const defOf = (inst: RuneInstance): RuneDef | undefined => catalog[inst.defId];
+  const defOf = (inst: RuneInstance): RuneDef | undefined => resolveDef(catalog, inst);
+  const isForged = (def: RuneDef): boolean => def.name.endsWith('+');
 
   // ---------------------------------------------------------- tooltips
   const hideTip = (): void => { tooltip.style.display = 'none'; };
@@ -380,7 +381,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
   }
 
   function buildCard(def: RuneDef, x: number, y: number, ghost: boolean, linkedIn?: Set<number>, openOut?: Set<number>): HTMLElement {
-    const card = h('div', `re-card ${ghost ? 're-ghost' : 're-node'}`);
+    const card = h('div', `re-card ${ghost ? 're-ghost' : 're-node'}${isForged(def) ? ' forged' : ''}`);
     card.style.left = `${x}px`;
     card.style.top = `${y}px`;
     card.style.width = `${CARD_W}px`;
@@ -768,7 +769,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
     sbox.appendChild(bar);
 
     let plan: ReturnType<typeof compileSpell> | null = null;
-    try { plan = compileSpell(graph, catalog); } catch { plan = null; }
+    try { plan = compileSpell(graph, catalog, opts.extraGlobals); } catch { plan = null; }
     const crow = h('div', 're-stat-row');
     crow.appendChild(h('span', undefined, 'Cast time'));
     crow.appendChild(h('span', 're-val', `${fmt(plan ? plan.castTime : v.castTime)}s`));
@@ -840,7 +841,7 @@ export const mountEditor: MountEditor = (container: HTMLElement, opts: EditorOpt
       const grid = h('div', 're-inv-grid');
       for (const o of list) {
         const d = defOf(o)!;
-        const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}`);
+        const card = h('div', `re-inv-card${selectedInv === o.uid ? ' selected' : ''}${o.plus ? ' forged' : ''}`);
         card.style.setProperty('--rar', RARITY_COLOR[d.rarity] ?? RARITY_COLOR.common);
         card.appendChild(h('div', 'n', d.name));
         card.appendChild(h('div', 's', summarize(d)));

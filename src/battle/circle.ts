@@ -18,6 +18,8 @@ export interface CircleInput {
   /** where the next cast will be aimed (world coords) */
   aimX: number;
   aimY: number;
+  /** the last cast was a large one: bigger shockwave */
+  big?: boolean;
 }
 
 const R = 62;
@@ -251,19 +253,32 @@ export function drawMagicCircle(ctx: CanvasRenderingContext2D, w: World, h: Circ
     ctx.restore();
   }
 
-  // cast shockwave
-  if (h.hasShots && h.sinceCast >= 0 && h.sinceCast < 0.7) {
-    const a = h.sinceCast / 0.7;
+  // cast shockwave (large casts: wider, longer, with a second trailing wave)
+  const big = !!h.big;
+  const dur = big ? 1.0 : 0.7;
+  if (h.hasShots && h.sinceCast >= 0 && h.sinceCast < dur) {
+    const a = h.sinceCast / dur;
     const e = 1 - (1 - a) * (1 - a); // ease-out
+    const sz = big ? 1.9 : 1;
     ctx.globalCompositeOperation = 'lighter';
     ctx.strokeStyle = col;
     ctx.globalAlpha = (1 - a) * 0.9;
-    ctx.lineWidth = 7 * (1 - a) + 1;
-    ctx.beginPath(); ctx.arc(0, 0, R * (0.6 + 2.6 * e), 0, TAU); ctx.stroke();
+    ctx.lineWidth = (big ? 11 : 7) * (1 - a) + 1;
+    ctx.beginPath(); ctx.arc(0, 0, R * (0.6 + 2.6 * sz * e), 0, TAU); ctx.stroke();
     ctx.globalAlpha = (1 - a) * 0.5;
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(0, 0, R * (0.5 + 1.9 * e), 0, TAU); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, R * (0.5 + 1.9 * sz * e), 0, TAU); ctx.stroke();
+    if (big) {
+      const e2 = Math.max(0, a - 0.15) / 0.85;
+      ctx.globalAlpha = (1 - e2) * 0.6 * (a > 0.15 ? 1 : 0);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 5 * (1 - e2) + 1;
+      ctx.beginPath(); ctx.arc(0, 0, R * (0.5 + 4.2 * (1 - (1 - e2) * (1 - e2))), 0, TAU); ctx.stroke();
+      ctx.globalAlpha = (1 - a) * 0.25;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(0, 0, R * (0.6 + 2.6 * sz * e), 0, TAU); ctx.fill();
+    }
     ctx.globalCompositeOperation = 'source-over';
   }
 

@@ -3,12 +3,13 @@ import {
   ELEMENT_COLOR, ENEMY_CFG, H, WARD_R, WARD_X, WARD_Y, W, burst, floatText,
   type Enemy, type World,
 } from './model';
+import { addTrauma, damageTextSize, onBigHit, registerKill } from './juice';
 import { damageTakenMul, moveMul, newStatus, tickStatus } from './status';
 import { sfx } from '../audio';
 
 export function spawnEnemy(w: World, kind: EnemyKind, hpScale: number, at?: { x: number; y: number }): Enemy {
   const cfg = ENEMY_CFG[kind];
-  const hp = Math.round(cfg.hp * hpScale);
+  const hp = Math.max(1, Math.round(cfg.hp * hpScale * w.mods.enemyHpMul));
   const e: Enemy = {
     id: w.nextId++, kind, cfg,
     x: at ? at.x : W + cfg.r + 10,
@@ -16,21 +17,28 @@ export function spawnEnemy(w: World, kind: EnemyKind, hpScale: number, at?: { x:
     hp, maxHp: hp, r: cfg.r, st: newStatus(),
     cd: cfg.ranged ? 0.8 + Math.random() * cfg.ranged.cd * 0.5 : 0,
     summonCd: cfg.summon ? cfg.summon.every * 0.5 : 0,
-    dead: false, flash: 0, attackAnim: 0, dotAcc: 0, dotTimer: 0, phase: Math.random() * 6,
+    dead: false, flash: 0, attackAnim: 0, dotAcc: 0, dotTimer: 0, phase: Math.random() * 6, reactAt: {},
   };
   w.enemies.push(e);
   return e;
 }
 
 /** Applies damage after resistances / weaken / wet. Returns final damage. */
-export function damageEnemy(w: World, e: Enemy, base: number, element: Element, dot = false): number {
+export function damageEnemy(
+  w: World, e: Enemy, base: number, element: Element, dot = false, opts: { reaction?: boolean } = {},
+): number {
   if (e.dead) return 0;
   const resist = e.cfg.resist[element] ?? 0;
   const dmg = base * (1 - resist) * damageTakenMul(e.st, element);
   e.hp -= dmg;
   e.flash = 0.12;
   if (dot) e.dotAcc += dmg;
-  else floatText(w, e.x, e.y - e.r - 6, String(Math.max(1, Math.round(dmg))), ELEMENT_COLOR[element], dmg >= 60 ? 19 : 14);
+  else {
+    if (dmg > w.bestHit) w.bestHit = dmg;
+    const size = damageTextSize(dmg) * (opts.reaction ? 1.25 : 1);
+    floatText(w, e.x, e.y - e.r - 6, String(Math.max(1, Math.round(dmg))), ELEMENT_COLOR[element], size, opts.reaction ? 1.1 : 0.9, !!opts.reaction);
+    if (dmg >= 150) { onBigHit(w, dmg); sfx('bigHit'); }
+  }
   if (e.hp <= 0) killEnemy(w, e);
   return dmg;
 }
@@ -38,6 +46,7 @@ export function damageEnemy(w: World, e: Enemy, base: number, element: Element, 
 function killEnemy(w: World, e: Enemy): void {
   e.dead = true;
   w.kills++;
+  registerKill(w, e, () => sfx('multiKill'));
   sfx(e.kind === 'boss_lich' ? 'bossDie' : 'enemyDie');
   burst(w, e.x, e.y, e.cfg.color, e.kind === 'boss_lich' ? 60 : 16, e.kind === 'boss_lich' ? 300 : 140, 0.7, 3);
   w.rings.push({ x: e.x, y: e.y, r: e.r * 0.5, maxR: e.r * 1.8, t: 0, max: 0.35, color: e.cfg.color });
@@ -45,11 +54,13 @@ function killEnemy(w: World, e: Enemy): void {
 
 export function damageWard(w: World, n: number): void {
   if (w.wardHp <= 0) return;
+  n *= w.mods.enemyDamageMul;
   const d = Math.min(n, w.wardHp);
   w.wardHp -= d;
   w.damageTaken += d;
   w.wardFlash = 0.25;
   sfx('wardHit');
+  addTrauma(w, 0.3);
   floatText(w, WARD_X, WARD_Y - 50, '-' + Math.round(d), '#ff5a5a', 18, 1);
   burst(w, WARD_X, WARD_Y, '#ff5a5a', 8, 120, 0.4);
 }
@@ -91,7 +102,7 @@ export function updateEnemies(w: World, dt: number, hpScale: number): void {
     }
 
     if (e.st.freeze > 0) continue; // frozen: no movement, no attacks, cooldowns hold
-    const mul = moveMul(e.st);
+    const mul = moveMul(e.st) * w.mods.enemySpeedMul;
     const cfg = e.cfg;
     e.cd -= dt;
 

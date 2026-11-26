@@ -116,6 +116,8 @@ export type RuneCatalog = Record<string, RuneDef>;
 export interface RuneInstance {
   uid: string;
   defId: string;
+  /** Forged copy ("Name+"): resolved through `upgradeDef` from the spell engine. */
+  plus?: boolean;
 }
 
 /** Points at an output socket of a placed rune. */
@@ -190,19 +192,100 @@ export interface BattleResult {
   kills: number;
   damageTaken: number;
   durationSec: number;
+  /** Elemental reactions triggered (see DESIGN.md, Reactions). */
+  reactions?: number;
+  /** Largest single hit dealt. */
+  bestHit?: number;
+}
+
+// ---------------------------------------------------------------- Blessings & curses
+
+/** Battle-side multipliers from blessings/curses. Neutral value: 1 for *Mul, 0 for wardRegen. */
+export interface BattleMods {
+  enemyHpMul: number;
+  enemySpeedMul: number;
+  /** damage enemies deal to the ward */
+  enemyDamageMul: number;
+  /** damage dealt by elemental reactions */
+  reactionDamageMul: number;
+  /** ward HP regenerated per second */
+  wardRegen: number;
+}
+
+export interface BoonDef {
+  id: string;
+  name: string;
+  description: string;
+  kind: 'blessing' | 'curse';
+  /** Applied as spell-wide globals to every shot (extra globals for compileSpell). */
+  spell?: Modifier[];
+  /** Multiplied into BattleMods (wardRegen is added). */
+  battle?: Partial<BattleMods>;
+  /** Added to max ward HP. */
+  wardHp?: number;
+  /** Multiplies gold earned. */
+  goldMul?: number;
+  /** Multiplies shop prices. */
+  priceMul?: number;
+  /** Added to the number of runes offered after a battle. */
+  rewardOffer?: number;
+  /** Added to max mana gained per cleared battle. */
+  manaGain?: number;
+}
+
+/** Run-start choice. */
+export interface SchoolDef {
+  id: string;
+  name: string;
+  description: string;
+  /** Accent color for the pick screen. */
+  color: Color;
+  /** Starter rune defIds (Source excluded). */
+  kit: string[];
+  /** Blessing granted at run start, if any. */
+  boon?: string;
+}
+
+// ---------------------------------------------------------------- Map
+
+export type MapNodeKind = 'battle' | 'elite' | 'shop' | 'forge' | 'shrine' | 'boss';
+
+export interface MapNode {
+  /** unique, e.g. "r3c1" */
+  id: string;
+  /** 1-based; row N uses floor N's difficulty */
+  row: number;
+  /** 0-based position within its row */
+  col: number;
+  kind: MapNodeKind;
+  /** ids of reachable nodes in row + 1 */
+  next: string[];
+}
+
+export interface RunMap {
+  /** rows[0] is row 1 */
+  rows: MapNode[][];
 }
 
 // ---------------------------------------------------------------- Run state
 
 export interface RunState {
-  floor: number; // next floor to play, 1-based
+  floor: number; // next map row to play, 1-based
   /** Every rune the player owns (not including the root Source). */
   owned: RuneInstance[];
   /** Current spell. Nodes other than the root must be uids from `owned`. */
   graph: SpellGraph;
   maxMana: number;
+  /** Base max ward HP, before boon `wardHp` bonuses. */
   wardMaxHp: number;
   seed: number;
+  school: string;
+  map: RunMap;
+  /** id of the last visited map node; null before the first pick */
+  at: string | null;
+  gold: number;
+  /** BoonDef ids currently held (blessings and curses) */
+  boons: string[];
 }
 
 /** Floor rewards are always runes. Max mana grows automatically per floor (see run/state.ts). */

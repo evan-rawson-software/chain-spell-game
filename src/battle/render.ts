@@ -32,13 +32,19 @@ export interface HudState {
   /** where the next cast will be aimed (world coords) */
   aimX: number;
   aimY: number;
+  /** last cast was large (bigger shockwave) */
+  bigCast: boolean;
+  /** combo counter (kills within 2 s of each other) */
+  combo: { n: number; k: number } | null;
+  /** multi-kill callout, k = 0..1 progress */
+  callout: { text: string; color: string; k: number } | null;
 }
 
 export function render(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
   drawArena(ctx, h.floor, h.time, h.pxScale, h.offX, h.viewW);
   drawMagicCircle(ctx, w, {
     time: h.time, progress: h.castTime > 0 ? h.charge / h.castTime : 0, hasShots: h.hasShots,
-    sinceCast: h.sinceCast, color: h.orbColor, aimX: h.aimX, aimY: h.aimY,
+    sinceCast: h.sinceCast, color: h.orbColor, aimX: h.aimX, aimY: h.aimY, big: h.bigCast,
   });
   for (const e of w.enemies) drawEnemy(ctx, e, h.time);
   drawEnemyProjectiles(ctx, w);
@@ -475,8 +481,10 @@ function drawEffects(ctx: CanvasRenderingContext2D, w: World): void {
     ctx.font = `bold ${t.size}px sans-serif`;
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)';
     ctx.strokeText(t.text, t.x, t.y);
+    if (t.glow) { ctx.save(); ctx.shadowColor = t.color; ctx.shadowBlur = 12; }
     ctx.fillStyle = t.color;
     ctx.fillText(t.text, t.x, t.y);
+    if (t.glow) ctx.restore();
   }
   ctx.globalAlpha = 1;
 }
@@ -525,6 +533,27 @@ function drawHud(ctx: CanvasRenderingContext2D, w: World, h: HudState): void {
     const by = 40 * u;
     bar(ctx, W / 2 - 220, by, 440, 16 * u, boss.hp / boss.maxHp, '#8b3ad8');
     label(ctx, `${boss.cfg.name}  ${Math.ceil(boss.hp)} / ${boss.maxHp}`, W / 2, by + 13 * u, 12 * u, 'center');
+  }
+
+  // combo counter
+  if (h.combo) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, h.combo.k * 2.5);
+    label(ctx, `Combo ×${h.combo.n}`, W - 20, 54 * u, (16 + Math.min(10, h.combo.n * 0.4)) * u, 'right', h.combo.n >= 10 ? '#ffb347' : '#ffe9a8');
+    ctx.restore();
+  }
+
+  // multi-kill callout (center top)
+  if (h.callout) {
+    const k = h.callout.k;
+    const pop = k < 0.12 ? 0.6 + (k / 0.12) * 0.55 : k < 0.22 ? 1.15 - ((k - 0.12) / 0.1) * 0.15 : 1;
+    ctx.save();
+    ctx.globalAlpha = k > 0.7 ? Math.max(0, 1 - (k - 0.7) / 0.3) : 1;
+    ctx.translate(W / 2, 120 * u);
+    ctx.scale(pop, pop);
+    ctx.shadowColor = h.callout.color; ctx.shadowBlur = 22;
+    label(ctx, h.callout.text, 0, 0, 46 * u, 'center', h.callout.color);
+    ctx.restore();
   }
 
   // off-screen enemy markers on the right edge

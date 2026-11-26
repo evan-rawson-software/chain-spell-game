@@ -87,6 +87,32 @@ When the spell is cast:
   the cursor when it is over the arena, otherwise at the nearest enemy.
 - Ward HP **resets to full at the start of each floor**. Reaching 0 during a floor ends the run.
 
+### Elemental reactions
+A hit checks the enemy's statuses **before** applying its own, so shot order matters (Frost Bolt
+then Fireball melts; reorder a level in the editor to change it). Reaction damage never triggers
+further reactions, and is scaled by the reaction-damage battle mod.
+
+| Reaction | Enemy has | Hit element | Effect | Consumes |
+|---|---|---|---|---|
+| Shatter | Freeze | any but frost | hit deals ×2 | freeze |
+| Melt | Slow | fire | hit deals ×1.5 | slow |
+| Steam | Burn | frost | cloud (r 80): Wet 50% 3 s and Slow 30% 2 s on everyone inside | burn |
+| Combust | Poison | fire | remaining poison damage ×1.5, dealt at once to the target and everyone within 80 | poison |
+| Wildfire | Burn | nature | the burn spreads to everyone within 100 | — |
+| Electrocute | Wet | lightning | arcs to every other wet enemy within 180 for 50% of the hit | wet (all hit) |
+| Overload | Burn | lightning | blast (r 70) for 40% of the hit | burn |
+| Unravel | 2+ status kinds | arcane | +25% damage per status kind | all statuses |
+
+The existing Wet bonus to lightning still applies to the triggering hit.
+
+### Big spell moments
+- Screen shake from explosions, reactions, big hits, ward hits and elite/boss deaths (reduced
+  under `prefers-reduced-motion`).
+- Brief hit-stop on big hits and elite kills; slow motion and a flash when an elite or the boss dies.
+- Multi-kill callouts (3+ kills within 0.5 s) and a combo counter for steady kills.
+- Damage numbers grow with damage; reaction hits get a named callout.
+- Large casts (many projectiles or high total damage) get a bigger circle shockwave.
+
 ### Effect categories in scope
 
 | Category | Examples |
@@ -99,10 +125,53 @@ When the spell is cast:
 
 ## 5. Run structure
 
-- **Linear floors.** **[default]** 10 floors: elite on floor 5, boss on floor 10.
-- After each floor: **[default]** pick 2 of 5 runes (rewards are always runes). Elites/bosses
-  offer rarer runes. Max mana goes up automatically (+2 per floor, +3 after the elite).
-- Between floors the player opens the **Rune Editor**: all owned runes sit in an inventory
+### Map
+- **Branching map.** 10 rows, seeded from the run seed. Row *r* uses floor *r*'s difficulty
+  (waves and HP scaling). The player picks one node per row, moving along the map's edges.
+- Row 1: 3 battle nodes. Rows 2–8: 2–4 nodes each, at least one battle per row, elites only from
+  row 4 and always at least one on row 5. Row 9: a rest row (shop / forge / shrine only). Row 10: a single boss node.
+- Edges link each node to 1–2 nodes in nearby columns of the next row, without crossing. Every
+  node in rows 2–10 has a way in and every node in rows 1–9 has a way out.
+- Node kinds:
+
+| Node | What happens |
+|---|---|
+| **Battle** | Prepare (rune editor) → fight. Win: gold, pick 2 of 5 runes, +2 max mana. |
+| **Elite** | Harder fight (an Elite Knight joins, HP +10%). Win: more gold, rarer runes, +3 max mana, and pick 1 of 3 blessings. |
+| **Shop** | Spend gold: 5 runes for sale, a forge service, and removing a curse. Purchases persist. |
+| **Forge** | Upgrade one owned rune for free. |
+| **Shrine** | Pick 1 of 2 blessings, **or** take a Dark Bargain: a random curse plus a random rare rune and gold. |
+| **Boss** | Final fight. Winning ends the run in victory. |
+
+- Shop, forge and shrine nodes grant +1 max mana when left. Gold starts at 20.
+- **[default]** Prices: common 30, uncommon 50, rare 80, forge 40, remove curse 50 (all × price boons).
+
+### Forge
+A forged rune is the same rune with a **+**: `upgradeDef` in `src/spell/`.
+- Inputs, outputs and cast time are unchanged, so a placed rune stays valid. Mana −1 (min 0).
+- Shot: damage ×1.5, status potency ×1.25.
+- Augments and globals: beneficial values ×1.5 (positive for shot stats, negative for
+  cast time / mana cost); a flat count, pierce or chain bonus gets +1 instead. Drawbacks are unchanged.
+- A rune can be forged once. The Source can't be forged.
+
+### Blessings and curses
+Run-wide effects held in `RunState.boons` (data in `src/data/boons.ts`). Blessings come from the
+starting school, elites and shrines; curses come from Dark Bargains and are removed at shops.
+A boon can change shot stats for every shot (only shot stats, never cast time or mana, so the
+editor's validation and combat always agree), battle multipliers (enemy HP / speed / damage,
+reaction damage, ward regen), max ward HP, gold, shop prices, runes offered and mana gained.
+
+### Run start: schools
+Each run starts by picking a school, which sets the starter kit, starting spell and a blessing:
+
+| School | Kit | Blessing |
+|---|---|---|
+| Elementalist | Amplify, Fireball, Frost Bolt | Catalysis (reactions +50%) |
+| Pyromancer | Amplify, Fireball, Ember Dart | Ember Heart (+20% fire damage) |
+| Cryomancer | Frost Focus, Frost Bolt, Ice Shard, Ember Dart | Frost Heart (+20% frost damage) |
+| Druid | Bloom, Thorn Shot, Poison Cloud, Ember Dart | Verdant Heart (+25% nature status potency) |
+
+- Between battles the player opens the **Rune Editor**: all owned runes sit in an inventory
   and the spell can be fully rebuilt.
 
 ### Starter kit **[default]**
@@ -125,4 +194,4 @@ Starting spell: `Source →R→ Amplify →R→ Fireball` and `Source →B→ Fr
 
 ## 7. Scope decisions
 
-- No meta-progression in the MVP: every run starts from the same starter kit.
+- No meta-progression in the MVP: every run starts from a school's starter kit.
